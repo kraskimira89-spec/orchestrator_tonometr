@@ -53,6 +53,21 @@ def init_database():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            full_name TEXT NOT NULL,
+            telegram_chat_id TEXT,
+            phone TEXT,
+            device_type TEXT
+        )
+    """)
+
+    try:
+        cursor.execute("ALTER TABLE devices ADD COLUMN responsible_fio TEXT DEFAULT ''")
+    except Exception:
+        pass
+
     # Таблица истории поверок
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS verifications (
@@ -129,11 +144,54 @@ def init_database():
 
 
 def get_all_devices():
-    """Возвращает все активные приборы с их статусами."""
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM v_device_status ORDER BY type, name")
-    rows = cursor.fetchall()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    # удаляем мусорные строки без инвентарного номера
+    cur.execute("""
+        DELETE FROM devices
+        WHERE inventory_number IS NULL
+           OR TRIM(inventory_number) = ''
+           OR TRIM(inventory_number) IN (
+                'Инв. номер', '№', '1', '2', '3', '4', '5',
+                'Местонахождение (склад/вагон)'
+           )
+    """)
+    conn.commit()
+
+    cur.execute("""
+        SELECT
+            d.id,
+            d.type,
+            d.inventory_number,
+            d.location,
+            d.responsible_fio,
+            v.expiry_date,
+            v.verification_date,
+            CASE
+                WHEN v.expiry_date IS NULL THEN 'no_data'
+                WHEN date(v.expiry_date) < date('now') THEN 'red'
+                WHEN date(v.expiry_date) <= date('now', '+60 days') THEN 'yellow'
+                ELSE 'green'
+            END AS status
+        FROM devices d
+        LEFT JOIN (
+            SELECT device_id,
+                   MAX(expiry_date) AS expiry_date,
+                   verification_date
+            FROM verifications
+            GROUP BY device_id
+        ) v ON d.id = v.device_id
+        WHERE d.inventory_number IS NOT NULL
+          AND TRIM(d.inventory_number) != ''
+          AND TRIM(d.inventory_number) NOT IN (
+                'Инв. номер', '№', '1', '2', '3',
+                'Местонахождение (склад/вагон)'
+          )
+        ORDER BY d.type, d.location
+    """)
+    rows = cur.fetchall()
     conn.close()
     return [dict(row) for row in rows]
 
@@ -150,6 +208,17 @@ def get_device_verifications(device_id):
     rows = cursor.fetchall()
     conn.close()
     return rows
+
+
+def update_responsible_fio(device_id: int, fio: str):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE devices SET responsible_fio = ? WHERE id = ?",
+        (fio.strip(), device_id)
+    )
+    conn.commit()
+    conn.close()
 
 
 if __name__ == "__main__":

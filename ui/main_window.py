@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -23,8 +23,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from db.database import get_all_devices, get_connection, init_database
+from db.database import get_all_devices, get_connection, init_database, update_responsible_fio
 from ui.verification_dialog import VerificationDialog
+from ui.device_card import DeviceCardDialog
+from ui.add_device_dialog import AddDeviceDialog
+from ui.date_delegate import DateDelegate
 
 
 # ── Делегат: жирная черта под строкой заголовков ──────────────────────────────
@@ -42,8 +45,8 @@ class HeaderBorderDelegate(QStyledItemDelegate):
 # Индексы столбцов в таблице
 COL_ID       = 0
 COL_TYPE     = 1
-COL_INV      = 2   # Инв. №  (был "Наименование" — убираем, сдвигаем влево)
-COL_LOCATION = 3
+COL_INV      = 2      # ← Инв. №  (колонка 2)
+COL_LOCATION = 3      # ← Место   (колонка 3)
 COL_EXPIRY   = 4
 COL_STATUS   = 5
 COL_RESP     = 6
@@ -58,7 +61,7 @@ COL_FIELDS = {
     COL_LOCATION: "location",
     COL_EXPIRY:   "expiry_date",
     COL_STATUS:   "status",
-    COL_RESP:     "responsible_name",
+    COL_RESP:     "responsible_fio",
 }
 
 STATUS_ORDER = {"green": 0, "yellow": 1, "red": 2, "no_data": 3}
@@ -131,12 +134,25 @@ class MainWindow(QMainWindow):
         self.search_box.textChanged.connect(self.refresh_table)
         filters_layout.addWidget(self.search_box)
 
+        self.add_btn = QPushButton("➕  Добавить прибор")
+        self.add_btn.setStyleSheet(
+            "QPushButton { background:#1F3864; color:white; font-weight:bold; "
+            "padding:4px 14px; border-radius:4px; }"
+            "QPushButton:hover { background:#2E4FA3; }"
+        )
+        self.add_btn.clicked.connect(self.on_add_device)
+        filters_layout.addWidget(self.add_btn)
+
         filters_layout.addStretch()
 
         # ── таблица ───────────────────────────────────────────────────────
         self.table = QTableWidget()
         self._header_delegate = HeaderBorderDelegate()
         self.table.setItemDelegate(self._header_delegate)
+
+        # делегат с календарём только для колонки "Дата окончания"
+        self._date_delegate = DateDelegate()
+        self.table.setItemDelegateForColumn(COL_EXPIRY, self._date_delegate)
         self.table.setEditTriggers(
             QTableWidget.EditTrigger.DoubleClicked
         )
@@ -152,6 +168,7 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self.table)
 
+        init_database()
         self.refresh_table()
         self.fill_filter_values()
 
@@ -165,11 +182,18 @@ class MainWindow(QMainWindow):
             "⚪ Нет данных": "no_data",
         }.get(t, "")
 
+    def _status_key_from_label(self, label: str) -> str:
+        return {
+            "В норме":    "green",
+            "Скоро срок": "yellow",
+            "Просрочено": "red",
+        }.get(label, "no_data")
+
     # ── заполнение выпадашек ──────────────────────────────────────────────
     def fill_filter_values(self):
         devices = get_all_devices()
         locations   = sorted({r["location"] for r in devices if r.get("location")})
-        responsibles = sorted({r["responsible_name"] for r in devices if r.get("responsible_name")})
+        responsibles = sorted({r["responsible_fio"] for r in devices if r.get("responsible_fio")})
 
         cur_loc  = self.location_filter.currentText()
         cur_resp = self.responsible_filter.currentText()
@@ -196,26 +220,28 @@ class MainWindow(QMainWindow):
         self.location_filter.blockSignals(False)
         self.responsible_filter.blockSignals(False)
 
+    def on_add_device(self):
+        dlg = AddDeviceDialog(self)
+        if dlg.exec():
+            init_database()
+            self.refresh_table()
+            self.fill_filter_values()
+            # прокручиваем к последней строке — там новый прибор
+            last_row = self.table.rowCount() - 1
+            if last_row >= HEADER_ROWS:
+                self.table.scrollToItem(
+                    self.table.item(last_row, 0),
+                )
+                self.table.selectRow(last_row)
+
     # ── основная отрисовка таблицы ────────────────────────────────────────
     def refresh_table(self):
         self.table.blockSignals(True)
 
         all_devices = get_all_devices()
 
-        # Итоговые / служебные строки — те, у которых нет inventory_number
-        # или name содержит "Сформировано" / "№" и т.п.
-        # Определяем по отсутствию инв. номера И наличию мусора в name
-        def is_summary(row):
-            name = (row.get("name") or "").strip()
-            inv  = (row.get("inventory_number") or "").strip()
-            return (
-                "сформировано" in name.lower()
-                or name in ("№", "1", "")
-                or (not inv and not name)
-            )
-
-        data_rows    = [r for r in all_devices if not is_summary(r)]
-        summary_rows = [r for r in all_devices if is_summary(r)]
+        data_rows    = all_devices
+        summary_rows = []
 
         # ── фильтрация (только data_rows) ────────────────────────────────
         type_filter       = self.type_filter.currentText()
@@ -233,7 +259,7 @@ class MainWindow(QMainWindow):
                 continue
             if location_filter != "Все" and row.get("location") != location_filter:
                 continue
-            if resp_filter != "Все" and row.get("responsible_name") != resp_filter:
+            if resp_filter != "Все" and row.get("responsible_fio") != resp_filter:
                 continue
             if search_text and current_col not in (-1, 0, 1):
                 field = COL_FIELDS.get(current_col)
@@ -258,8 +284,7 @@ class MainWindow(QMainWindow):
                         reverse=not self._sort_asc,
                     )
 
-        # итоговые строки — всегда в конце, без сортировки и фильтрации
-        all_visible = filtered + summary_rows
+        all_visible = filtered
 
         total_rows = len(all_visible) + HEADER_ROWS
         self.table.clearContents()
@@ -298,7 +323,6 @@ class MainWindow(QMainWindow):
         # ── строки данных ────────────────────────────────────────────────
         for r, row in enumerate(all_visible):
             actual_row = r + HEADER_ROWS
-            is_sum = is_summary(row)
 
             status = row.get("status") or "no_data"
             expiry = row.get("expiry_date") or ""
@@ -310,7 +334,7 @@ class MainWindow(QMainWindow):
                 row.get("location") or "",
                 expiry,
                 STATUS_LABELS.get(status, "Нет данных"),
-                row.get("responsible_name") or "",
+                row.get("responsible_fio") or "",
             ]
 
             bg_status, fg_status = STATUS_COLORS.get(status, STATUS_COLORS["no_data"])
@@ -319,19 +343,19 @@ class MainWindow(QMainWindow):
                 cell = QTableWidgetItem(val)
                 cell.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
-                if is_sum:
-                    # итоговые строки — серый фон, курсив, не редактируются
-                    italic_font = QFont("Calibri", 9)
-                    italic_font.setItalic(True)
-                    cell.setFont(italic_font)
-                    cell.setBackground(QColor("#F2F2F2"))
-                    cell.setForeground(QColor("#888888"))
-                    cell.setFlags(Qt.ItemFlag.ItemIsEnabled)
-                elif c == COL_STATUS:
+                if c == COL_STATUS:
                     cell.setBackground(QColor(bg_status))
                     cell.setForeground(QColor(fg_status))
                     cell.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
                 elif c == COL_EXPIRY:
+                    cell.setBackground(QColor("#FFFFFF"))
+                    cell.setForeground(QColor("#000000"))
+                    cell.setFlags(
+                        Qt.ItemFlag.ItemIsEnabled
+                        | Qt.ItemFlag.ItemIsSelectable
+                        | Qt.ItemFlag.ItemIsEditable
+                    )
+                elif c == COL_RESP:
                     cell.setBackground(QColor("#FFFFFF"))
                     cell.setForeground(QColor("#000000"))
                     cell.setFlags(
@@ -363,37 +387,15 @@ class MainWindow(QMainWindow):
             self.refresh_table()
 
     def on_cell_double_clicked(self, row, col):
-        # двойной клик по заголовкам — игнорируем
+        # заголовки — игнорируем
         if row < HEADER_ROWS:
             return
-        # двойной клик по колонке даты — разрешаем встроенное редактирование
+
+        # на колонке даты — разрешаем встроенное редактирование (не карточку)
         if col == COL_EXPIRY:
             return
 
-        item_id   = self.table.item(row, COL_ID)
-        item_name = self.table.item(row, COL_INV)
-        if not item_id or not item_name:
-            return
-
-        try:
-            device_id = int(item_id.text())
-        except ValueError:
-            return
-
-        dlg = VerificationDialog(device_id, item_name.text(), self)
-        if dlg.exec():
-            dlg.save()
-            init_database()
-            self.refresh_table()
-            self.fill_filter_values()
-
-    def on_item_changed(self, item):
-        if item.column() != COL_EXPIRY:
-            return
-        if item.row() < HEADER_ROWS:
-            return
-
-        id_item = self.table.item(item.row(), COL_ID)
+        id_item = self.table.item(row, COL_ID)
         if not id_item:
             return
         try:
@@ -401,23 +403,66 @@ class MainWindow(QMainWindow):
         except ValueError:
             return
 
-        new_date = item.text().strip()
-        parts = new_date.split("-")
-        if len(parts) != 3:
+        # собираем текущие данные строки для передачи в карточку
+        def cell_text(c):
+            it = self.table.item(row, c)
+            return it.text() if it else ""
+
+        device_data = {
+            "id":               device_id,
+            "type":             cell_text(COL_TYPE),
+            "inventory_number": cell_text(COL_INV),
+            "location":         cell_text(COL_LOCATION),
+            "expiry_date":      cell_text(COL_EXPIRY),
+            "responsible_fio":  cell_text(COL_RESP),
+            "status":           self._status_key_from_label(cell_text(COL_STATUS)),
+            "verification_date": "",
+        }
+
+        dlg = DeviceCardDialog(device_data, self)
+        if dlg.exec():
+            init_database()
+            self.refresh_table()
+            self.fill_filter_values()
+
+    def on_item_changed(self, item):
+        row = item.row()
+        col = item.column()
+
+        if row < HEADER_ROWS:
             return
 
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(
-            """
-            INSERT INTO verifications (device_id, verification_date, expiry_date, result, comment)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (device_id, None, new_date, "пройдено", "Ручное редактирование"),
-        )
-        conn.commit()
-        conn.close()
+        id_item = self.table.item(row, COL_ID)
+        if not id_item:
+            return
+        try:
+            device_id = int(id_item.text())
+        except ValueError:
+            return
 
-        init_database()
-        self.refresh_table()
-        self.fill_filter_values()
+        # Редактирование даты окончания
+        if col == COL_EXPIRY:
+            new_date = item.text().strip()
+            parts = new_date.split("-")
+            if len(parts) != 3:
+                return
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO verifications (device_id, verification_date, expiry_date, result, comment)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (device_id, None, new_date, "пройдено", "Ручное редактирование"),
+            )
+            conn.commit()
+            conn.close()
+            init_database()
+            self.refresh_table()
+            self.fill_filter_values()
+
+        # Редактирование ФИО ответственного
+        elif col == COL_RESP:
+            fio = item.text().strip()
+            update_responsible_fio(device_id, fio)
+            # не перезагружаем всю таблицу — просто сохраняем
