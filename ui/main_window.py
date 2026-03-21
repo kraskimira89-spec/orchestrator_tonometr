@@ -29,6 +29,9 @@ from ui.device_card import DeviceCardDialog
 from ui.add_device_dialog import AddDeviceDialog
 from ui.date_delegate import DateDelegate
 from ui.side_panel import SidePanel
+from ui.import_excel_dialog import ImportExcelDialog
+from ui.responsible_dialog import ResponsibleDialog
+from ui.dashboard_dialog import DashboardDialog
 
 
 # ── Делегат: жирная черта под строкой заголовков ──────────────────────────────
@@ -157,6 +160,9 @@ class MainWindow(QMainWindow):
         self.side_panel.sig_add_device.connect(self.on_add_device)
         self.side_panel.sig_notify.connect(self.on_send_notifications)
         self.side_panel.sig_export.connect(self.on_export_excel)
+        self.side_panel.sig_import_excel.connect(self.on_import_excel)
+        self.side_panel.sig_responsible.connect(self.on_responsible)
+        self.side_panel.sig_dashboard.connect(self.on_dashboard)
         # поиск из панели подключаем к refresh_table
         self.side_panel.search_box.textChanged.connect(self.refresh_table)
         main_layout.addWidget(self.side_panel)
@@ -457,6 +463,19 @@ class MainWindow(QMainWindow):
             if last_row >= HEADER_ROWS:
                 self.table.scrollToItem(self.table.item(last_row, 0))
                 self.table.selectRow(last_row)
+
+    def on_import_excel(self):
+        dlg = ImportExcelDialog(self)
+        if dlg.exec():
+            init_database()
+            self.refresh_table()
+            self.fill_filter_values()
+
+    def on_responsible(self):
+        ResponsibleDialog(self).exec()
+
+    def on_dashboard(self):
+        DashboardDialog(self).exec()
 
     def on_send_notifications(self):
         reply = QMessageBox.question(

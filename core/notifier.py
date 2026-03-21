@@ -1,11 +1,10 @@
 """
-Модуль отправки уведомлений через MAX Bot API.
-Отправляет напоминания ответственным об истечении сроков поверки.
+Уведомления через MAX Bot API: приборы группируются по ответственному,
+для каждого берётся max_user_id из responsible_persons; если нет — рассылка на MAX_ADMIN_USER_ID.
 """
-import json
 import os
 import sys
-import time as _time
+from collections import defaultdict
 from datetime import date, datetime
 
 import requests
@@ -19,47 +18,21 @@ if PROJECT_ROOT not in sys.path:
 load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 
 MAX_BOT_TOKEN = os.getenv("MAX_BOT_TOKEN", "")
-ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "")
+MAX_ADMIN_USER_ID = (os.getenv("MAX_ADMIN_USER_ID") or os.getenv("ADMIN_CHAT_ID") or "").strip()
 NOTIFY_DAYS_1 = int(os.getenv("NOTIFY_DAYS_1", "60"))
 NOTIFY_DAYS_2 = int(os.getenv("NOTIFY_DAYS_2", "7"))
 
 MAX_API_URL = "https://platform-api.max.ru"
 
-from db.database import get_all_devices, get_connection  # noqa: E402
-
-# #region agent log
-_GCID_DBG_LEFT = 12
-
-
-def _agent_log(hypothesis_id: str, location: str, message: str, data: dict) -> None:
-    try:
-        log_path = os.path.join(PROJECT_ROOT, "debug-409b57.log")
-        line = json.dumps(
-            {
-                "sessionId": "409b57",
-                "hypothesisId": hypothesis_id,
-                "location": location,
-                "message": message,
-                "data": data,
-                "timestamp": int(_time.time() * 1000),
-            },
-            ensure_ascii=False,
-        )
-        with open(log_path, "a", encoding="utf-8") as _lf:
-            _lf.write(line + "\n")
-    except Exception:
-        pass
-
-
-# #endregion
+from db.database import (  # noqa: E402
+    get_all_devices,
+    get_connection,
+    get_max_user_id_for_fio,
+)
 
 
 def send_message(chat_id: str, text: str) -> bool:
-    """Отправляем сообщение через MAX Bot API.
-
-    Согласно документации: user_id передаётся как query-параметр,
-    текст — в теле запроса.
-    """
+    """Отправка сообщения в MAX: user_id в query, текст в JSON."""
     if not MAX_BOT_TOKEN:
         print("❌ MAX_BOT_TOKEN не задан в .env")
         return False
@@ -71,15 +44,14 @@ def send_message(chat_id: str, text: str) -> bool:
                 "Authorization": MAX_BOT_TOKEN,
                 "Content-Type": "application/json",
             },
-            params={"user_id": int(chat_id)},   # ← user_id в URL
-            json={"text": text},                 # ← только текст в теле
+            params={"user_id": int(chat_id)},
+            json={"text": text},
             timeout=10,
         )
         if r.status_code == 200:
             return True
-        else:
-            print(f"❌ MAX API {r.status_code}: {r.text}")
-            return False
+        print(f"❌ MAX API {r.status_code}: {r.text}")
+        return False
     except requests.exceptions.ConnectionError:
         print("❌ Нет соединения с MAX API.")
         return False
@@ -89,7 +61,6 @@ def send_message(chat_id: str, text: str) -> bool:
 
 
 def days_until(expiry_str: str) -> int | None:
-    """Возвращает количество дней до истечения срока поверки."""
     try:
         expiry = datetime.strptime(expiry_str, "%Y-%m-%d").date()
         return (expiry - date.today()).days
@@ -97,104 +68,52 @@ def days_until(expiry_str: str) -> int | None:
         return None
 
 
-def get_chat_id_for_device(device: dict) -> str | None:
+def _admin_chat_id() -> str | None:
+    return MAX_ADMIN_USER_ID if MAX_ADMIN_USER_ID else None
+
+
+def resolve_recipient_user_id(responsible_fio: str) -> str | None:
     """
-    Возвращает chat_id ответственного из БД.
-    Если не задан — возвращает ADMIN_CHAT_ID.
+    MAX user_id для ответственного: из responsible_persons,
+    иначе администратор MAX_ADMIN_USER_ID.
+    Пустое ФИО — сразу администратор.
     """
-    global _GCID_DBG_LEFT
+    fio = (responsible_fio or "").strip()
+    if not fio:
+        return _admin_chat_id()
 
-    resp_fio = device.get("responsible_fio") or ""
-    if not resp_fio:
-        out = ADMIN_CHAT_ID or None
-        # #region agent log
-        if _GCID_DBG_LEFT > 0:
-            _GCID_DBG_LEFT -= 1
-            _agent_log(
-                "H4",
-                "notifier.py:get_chat_id_for_device",
-                "resolved",
-                {
-                    "source": "empty_fio_admin",
-                    "result_len": len(out) if out else 0,
-                    "result_isdigit": out.isdigit() if out else False,
-                },
-            )
-        # #endregion
-        return out
+    uid = get_max_user_id_for_fio(fio)
+    if uid is not None:
+        return str(uid)
+    return _admin_chat_id()
 
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT max_chat_id FROM users WHERE name = ? AND max_chat_id IS NOT NULL",
-        (resp_fio,),
-    )
-    row = cur.fetchone()
-    conn.close()
 
-    if row and row[0]:
-        out = str(row[0])
-        # #region agent log
-        if _GCID_DBG_LEFT > 0:
-            _GCID_DBG_LEFT -= 1
-            _agent_log(
-                "H4",
-                "notifier.py:get_chat_id_for_device",
-                "resolved",
-                {
-                    "source": "users.max_chat_id",
-                    "fio_len": len(resp_fio.strip()),
-                    "result_len": len(out),
-                    "result_isdigit": out.isdigit(),
-                },
-            )
-        # #endregion
-        return out
-
-    # если у ответственного нет chat_id — уведомление идёт администратору
-    out = ADMIN_CHAT_ID or None
-    # #region agent log
-    if _GCID_DBG_LEFT > 0:
-        _GCID_DBG_LEFT -= 1
-        _agent_log(
-            "H4",
-            "notifier.py:get_chat_id_for_device",
-            "resolved",
-            {
-                "source": "admin_fallback_no_user_chat",
-                "fio_len": len(resp_fio.strip()),
-                "result_len": len(out) if out else 0,
-                "result_isdigit": out.isdigit() if out else False,
-            },
-        )
-    # #endregion
-    return out
+def _device_notice_lines(device: dict, urgency: str, detail: str, expiry_fmt: str) -> list[str]:
+    inv = device.get("inventory_number") or "—"
+    loc = device.get("location") or "—"
+    resp = device.get("responsible_fio") or "не указан"
+    dev_type = device.get("type") or "Прибор"
+    return [
+        f"{urgency}",
+        f"📋 {dev_type}: {inv}",
+        f"📍 {loc}",
+        f"👤 Ответственный: {resp}",
+        f"📅 Дата окончания: {expiry_fmt}",
+        f"⏳ {detail.capitalize()}",
+        "━━━━━━━━━━━━━━━━━━",
+    ]
 
 
 def check_and_notify(dry_run: bool = False) -> dict:
     """
-    Проверяет все приборы и отправляет уведомления.
-
-    dry_run=True — только подготавливает сообщения, не отправляет.
-    Возвращает статистику: {'sent': N, 'skipped': M, 'errors': K}
+    Уведомления сгруппированы по получателю (один user_id — одно сообщение со всеми приборами).
     """
-    # #region agent log
-    _agent_log(
-        "H2",
-        "notifier.py:check_and_notify:entry",
-        "config",
-        {
-            "dry_run": dry_run,
-            "admin_chat_id_configured": bool((ADMIN_CHAT_ID or "").strip()),
-            "admin_chat_id_len": len((ADMIN_CHAT_ID or "").strip()),
-            "token_configured": bool((MAX_BOT_TOKEN or "").strip()),
-        },
-    )
-    # #endregion
     devices = get_all_devices()
     stats = {"sent": 0, "skipped": 0, "errors": 0, "messages": []}
 
-    today_str = date.today().strftime("%d.%m.%Y")
+    # (fio_key, recipient_id) -> список фрагментов
+    # fio_key — для отладки; recipient_id — куда слать
+    groups: dict[tuple[str, str], list] = defaultdict(list)
 
     for device in devices:
         expiry = device.get("expiry_date")
@@ -202,60 +121,67 @@ def check_and_notify(dry_run: bool = False) -> dict:
             stats["skipped"] += 1
             continue
 
-        days = days_until(expiry)
-        if days is None:
+        d = days_until(expiry)
+        if d is None:
             stats["skipped"] += 1
             continue
 
-        # определяем нужно ли уведомлять
-        if days < 0:
+        if d < 0:
             urgency = "🔴 ПРОСРОЧЕНО"
-            detail = f"срок истёк {abs(days)} дн. назад"
-        elif days <= NOTIFY_DAYS_2:
+            detail = f"срок истёк {abs(d)} дн. назад"
+        elif d <= NOTIFY_DAYS_2:
             urgency = "🔴 СРОЧНО"
-            detail = f"до окончания {days} дн."
-        elif days <= NOTIFY_DAYS_1:
+            detail = f"до окончания {d} дн."
+        elif d <= NOTIFY_DAYS_1:
             urgency = "🟡 ВНИМАНИЕ"
-            detail = f"до окончания {days} дн."
+            detail = f"до окончания {d} дн."
         else:
             stats["skipped"] += 1
             continue
 
-        inv = device.get("inventory_number") or "—"
-        loc = device.get("location") or "—"
-        resp = device.get("responsible_fio") or "не указан"
-        expiry_fmt = datetime.strptime(expiry, "%Y-%m-%d").strftime("%d.%m.%Y")
-        dev_type = device.get("type") or "Прибор"
-
-        text = (
-            f"{urgency}\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"📋 {dev_type}: {inv}\n"
-            f"📍 {loc}\n"
-            f"👤 Ответственный: {resp}\n"
-            f"📅 Дата окончания: {expiry_fmt}\n"
-            f"⏳ {detail.capitalize()}\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"Оркестратор Поверки | {today_str}"
-        )
-
-        chat_id = get_chat_id_for_device(device)
-        if not chat_id:
+        fio = (device.get("responsible_fio") or "").strip()
+        fio_key = fio if fio else "__пусто__"
+        recipient = resolve_recipient_user_id(fio)
+        if not recipient:
             stats["errors"] += 1
             continue
 
-        stats["messages"].append({
-            "chat_id": chat_id,
-            "text": text,
-            "device_id": device.get("id"),
-        })
+        expiry_fmt = datetime.strptime(expiry, "%Y-%m-%d").strftime("%d.%m.%Y")
+        groups[(fio_key, recipient)].append(
+            (device, urgency, detail, expiry_fmt)
+        )
 
-        if not dry_run:
-            ok = send_message(chat_id, text)
-            if ok:
-                # логируем в БД
-                conn = get_connection()
-                cur = conn.cursor()
+    today_str = date.today().strftime("%d.%m.%Y")
+
+    for (_fio_key, chat_id), items in groups.items():
+        blocks = []
+        for device, urgency, detail, expiry_fmt in items:
+            blocks.extend(_device_notice_lines(device, urgency, detail, expiry_fmt))
+
+        header = (
+            f"Напоминания о поверке ({len(items)} шт.)\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+        )
+        text = header + "\n".join(blocks) + f"Оркестратор Поверки | {today_str}"
+
+        for device, _u, _d, _e in items:
+            stats["messages"].append(
+                {
+                    "chat_id": chat_id,
+                    "text": text,
+                    "device_id": device.get("id"),
+                }
+            )
+
+        if dry_run:
+            stats["sent"] += len(items)
+            continue
+
+        ok = send_message(chat_id, text)
+        if ok:
+            conn = get_connection()
+            cur = conn.cursor()
+            for device, _u, _d, _e in items:
                 cur.execute(
                     """
                     INSERT INTO notification_log
@@ -264,22 +190,25 @@ def check_and_notify(dry_run: bool = False) -> dict:
                     """,
                     (device.get("id"), "MAX", text, "sent"),
                 )
-                conn.commit()
-                conn.close()
                 stats["sent"] += 1
-            else:
-                stats["errors"] += 1
+            conn.commit()
+            conn.close()
+        else:
+            stats["errors"] += len(items)
 
     return stats
 
 
+def send_notifications():
+    """Точка входа для планировщика и скриптов."""
+    return check_and_notify(dry_run=False)
+
+
 if __name__ == "__main__":
     print("🔔 Запуск проверки уведомлений...\n")
-    result = check_and_notify(dry_run=False)
+    result = send_notifications()
     print(f"✅ Отправлено:  {result['sent']}")
     print(f"⏭  Пропущено:  {result['skipped']}")
     print(f"❌ Ошибок:     {result['errors']}")
     if result["messages"]:
-        print(f"\nПриборы с истекающим сроком: {len(result['messages'])}")
-        for m in result["messages"]:
-            print(f"  device_id={m['device_id']} → chat_id={m['chat_id']}")
+        print(f"\nЗаписей в очереди уведомлений: {len(result['messages'])}")

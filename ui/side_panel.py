@@ -118,6 +118,24 @@ class _FloatWindow(QWidget):
         export_btn.clicked.connect(panel.sig_export.emit)
         layout.addWidget(export_btn)
 
+        import_btn = QPushButton("📥  Импорт из Excel")
+        import_btn.setStyleSheet(btn_style)
+        import_btn.setFixedHeight(40)
+        import_btn.clicked.connect(panel.sig_import_excel.emit)
+        layout.addWidget(import_btn)
+
+        resp_btn = QPushButton("👤  Ответственные")
+        resp_btn.setStyleSheet(btn_style)
+        resp_btn.setFixedHeight(40)
+        resp_btn.clicked.connect(panel.sig_responsible.emit)
+        layout.addWidget(resp_btn)
+
+        dash_btn = QPushButton("📊  Статистика")
+        dash_btn.setStyleSheet(btn_style)
+        dash_btn.setFixedHeight(40)
+        dash_btn.clicked.connect(panel.sig_dashboard.emit)
+        layout.addWidget(dash_btn)
+
         layout.addStretch()
 
         # кнопка «Прикрепить →» (стрелка вправо — прикрепляем обратно)
@@ -147,6 +165,9 @@ class SidePanel(QWidget):
     sig_add_device = pyqtSignal()
     sig_notify     = pyqtSignal()
     sig_export     = pyqtSignal()
+    sig_import_excel = pyqtSignal()
+    sig_responsible = pyqtSignal()
+    sig_dashboard = pyqtSignal()
 
     DOCKED   = "docked"
     HIDDEN   = "hidden"
@@ -276,6 +297,27 @@ class SidePanel(QWidget):
         self.export_btn.setFixedHeight(40)
         self.export_btn.clicked.connect(self.sig_export.emit)
         layout.addWidget(self.export_btn)
+
+        self.import_excel_btn = QPushButton("📥  Импорт из Excel")
+        self.import_excel_btn.setStyleSheet(btn_style)
+        self.import_excel_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.import_excel_btn.setFixedHeight(40)
+        self.import_excel_btn.clicked.connect(self.sig_import_excel.emit)
+        layout.addWidget(self.import_excel_btn)
+
+        self.responsible_btn = QPushButton("👤  Ответственные")
+        self.responsible_btn.setStyleSheet(btn_style)
+        self.responsible_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.responsible_btn.setFixedHeight(40)
+        self.responsible_btn.clicked.connect(self.sig_responsible.emit)
+        layout.addWidget(self.responsible_btn)
+
+        self.dashboard_btn = QPushButton("📊  Статистика")
+        self.dashboard_btn.setStyleSheet(btn_style)
+        self.dashboard_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.dashboard_btn.setFixedHeight(40)
+        self.dashboard_btn.clicked.connect(self.sig_dashboard.emit)
+        layout.addWidget(self.dashboard_btn)
 
         layout.addSpacing(4)
 

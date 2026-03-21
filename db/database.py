@@ -88,6 +88,15 @@ def init_database():
         )
     """)
 
+    # Справочник ответственных → MAX user_id (для рассылки)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS responsible_persons (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            fio           TEXT NOT NULL UNIQUE,
+            max_user_id   INTEGER
+        )
+    """)
+
     # Таблица лога уведомлений
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS notification_log (
@@ -235,6 +244,55 @@ def update_responsible_fio(device_id: int, fio: str):
     )
     conn.commit()
     conn.close()
+
+
+def get_responsible_persons_rows():
+    """Все строки справочника ответственных (для GUI)."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, fio, max_user_id FROM responsible_persons ORDER BY fio COLLATE NOCASE"
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
+
+
+def upsert_responsible_person(fio: str, max_user_id: int | None) -> None:
+    """Добавить или обновить строку по ФИО."""
+    fio = (fio or "").strip()
+    if not fio:
+        return
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO responsible_persons (fio, max_user_id)
+        VALUES (?, ?)
+        ON CONFLICT(fio) DO UPDATE SET max_user_id = excluded.max_user_id
+        """,
+        (fio, max_user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_max_user_id_for_fio(fio: str) -> int | None:
+    """Возвращает max_user_id для ФИО или None."""
+    fio = (fio or "").strip()
+    if not fio:
+        return None
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT max_user_id FROM responsible_persons WHERE fio = ?",
+        (fio,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    if row and row[0] is not None:
+        return int(row[0])
+    return None
 
 
 if __name__ == "__main__":
