@@ -136,6 +136,12 @@ class _FloatWindow(QWidget):
         dash_btn.clicked.connect(panel.sig_dashboard.emit)
         layout.addWidget(dash_btn)
 
+        cal_btn = QPushButton("📅  Синхр. календарь")
+        cal_btn.setStyleSheet(btn_style)
+        cal_btn.setFixedHeight(40)
+        cal_btn.clicked.connect(panel.sig_caldav.emit)
+        layout.addWidget(cal_btn)
+
         layout.addStretch()
 
         # кнопка «Прикрепить →» (стрелка вправо — прикрепляем обратно)
@@ -168,6 +174,7 @@ class SidePanel(QWidget):
     sig_import_excel = pyqtSignal()
     sig_responsible = pyqtSignal()
     sig_dashboard = pyqtSignal()
+    sig_caldav = pyqtSignal()
 
     DOCKED   = "docked"
     HIDDEN   = "hidden"
@@ -318,6 +325,13 @@ class SidePanel(QWidget):
         self.dashboard_btn.setFixedHeight(40)
         self.dashboard_btn.clicked.connect(self.sig_dashboard.emit)
         layout.addWidget(self.dashboard_btn)
+
+        self.caldav_btn = QPushButton("📅  Синхр. календарь")
+        self.caldav_btn.setStyleSheet(btn_style)
+        self.caldav_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.caldav_btn.setFixedHeight(40)
+        self.caldav_btn.clicked.connect(self.sig_caldav.emit)
+        layout.addWidget(self.caldav_btn)
 
         layout.addSpacing(4)
 

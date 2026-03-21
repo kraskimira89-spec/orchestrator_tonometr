@@ -122,6 +122,14 @@ def init_database():
         )
     """)
 
+    # Ключ-значение (CalDAV и др.)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+
     # Представление: прибор + последняя поверка + статус светофора
     cursor.execute("DROP VIEW IF EXISTS v_device_status")
     cursor.execute("""
@@ -369,6 +377,33 @@ def delete_document(doc_id: int) -> None:
             pass
         conn.execute("DELETE FROM device_documents WHERE id = ?", (doc_id,))
         conn.commit()
+    conn.close()
+
+
+def get_setting(key: str, default: str = "") -> str:
+    conn = get_connection()
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    conn.close()
+    return row[0] if row else default
+
+
+def set_setting(key: str, value: str) -> None:
+    conn = get_connection()
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+        (key, value),
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_device_calendar_event_id(device_id: int, event_uid: str) -> None:
+    conn = get_connection()
+    conn.execute(
+        "UPDATE devices SET calendar_event_id = ? WHERE id = ?",
+        (event_uid, device_id),
+    )
+    conn.commit()
     conn.close()
 
 

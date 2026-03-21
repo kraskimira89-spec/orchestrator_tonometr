@@ -32,6 +32,7 @@ from ui.side_panel import SidePanel
 from ui.import_excel_dialog import ImportExcelDialog
 from ui.responsible_dialog import ResponsibleDialog
 from ui.dashboard_dialog import DashboardDialog
+from ui.caldav_settings_dialog import CalDAVSettingsDialog
 
 
 # ── Делегат: жирная черта под строкой заголовков ──────────────────────────────
@@ -163,6 +164,7 @@ class MainWindow(QMainWindow):
         self.side_panel.sig_import_excel.connect(self.on_import_excel)
         self.side_panel.sig_responsible.connect(self.on_responsible)
         self.side_panel.sig_dashboard.connect(self.on_dashboard)
+        self.side_panel.sig_caldav.connect(self.on_caldav)
         # поиск из панели подключаем к refresh_table
         self.side_panel.search_box.textChanged.connect(self.refresh_table)
         main_layout.addWidget(self.side_panel)
@@ -476,6 +478,9 @@ class MainWindow(QMainWindow):
 
     def on_dashboard(self):
         DashboardDialog(self).exec()
+
+    def on_caldav(self):
+        CalDAVSettingsDialog(self).exec()
 
     def on_send_notifications(self):
         reply = QMessageBox.question(
