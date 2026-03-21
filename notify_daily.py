@@ -18,15 +18,23 @@ LOG_PATH = os.path.join(log_dir, "notify.log")
 
 
 def _setup_logging():
+    fmt = "%(asctime)s %(levelname)s %(message)s"
+    # Явный UTF-8 в файл (читать: Get-Content ... -Encoding UTF8)
     logging.basicConfig(
+        filename=LOG_PATH,
         level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
+        format=fmt,
         encoding="utf-8",
-        handlers=[
-            logging.FileHandler(LOG_PATH, encoding="utf-8"),
-            logging.StreamHandler(sys.stdout),
-        ],
+        force=True,
     )
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except (OSError, ValueError):
+            pass
+    _con = logging.StreamHandler(sys.stdout)
+    _con.setFormatter(logging.Formatter(fmt))
+    logging.getLogger().addHandler(_con)
 
 
 def main():
