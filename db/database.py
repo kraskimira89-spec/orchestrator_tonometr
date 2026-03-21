@@ -337,6 +337,29 @@ def set_responsible_person_email(fio: str, email: str) -> None:
     conn.close()
 
 
+def was_notification_sent_today(device_id: int, channel: str) -> bool:
+    """
+    True, если для прибора уже есть запись в notification_log за сегодня
+    для указанного канала (например 'email', 'MAX').
+    """
+    if not device_id:
+        return False
+    day = date.today().isoformat()
+    conn = get_connection()
+    row = conn.execute(
+        """
+        SELECT 1 FROM notification_log
+        WHERE device_id = ?
+          AND channel = ?
+          AND substr(COALESCE(sent_at, ''), 1, 10) = ?
+        LIMIT 1
+        """,
+        (device_id, channel, day),
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
 def get_max_user_id_for_fio(fio: str) -> int | None:
     """Возвращает max_user_id для ФИО или None."""
     fio = (fio or "").strip()

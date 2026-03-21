@@ -14,7 +14,12 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import date, timedelta
 
-from db.database import get_connection, get_setting, get_responsible_email
+from db.database import (
+    get_connection,
+    get_responsible_email,
+    get_setting,
+    was_notification_sent_today,
+)
 
 WARN_DAYS = 30
 ADMIN_EMAIL_KEY = "smtp_admin_email"
@@ -228,10 +233,24 @@ def test_smtp(to_addr: str) -> str:
     return "✅ Письмо отправлено успешно." if ok else "❌ Ошибка отправки. Проверьте настройки SMTP."
 
 
+def _filter_devices_not_emailed_today(devices: list) -> tuple[list, int]:
+    """Оставляет приборы, по которым сегодня ещё не слали email; возвращает число отфильтрованных."""
+    kept = []
+    dup = 0
+    for d in devices:
+        did = d.get("id")
+        if was_notification_sent_today(int(did), "email"):
+            dup += 1
+        else:
+            kept.append(d)
+    return kept, dup
+
+
 def send_email_notifications(dry_run: bool = False) -> dict:
     """
     Отправляет email каждому ответственному о его приборах.
     Fallback: если email не указан — шлёт на admin email.
+    Повторно в тот же день по тому же прибору не шлёт (notification_log, channel=email).
     """
     today = date.today()
     deadline = today + timedelta(days=WARN_DAYS)
@@ -257,7 +276,7 @@ def send_email_notifications(dry_run: bool = False) -> dict:
 
     if not rows:
         print("Email: нет приборов с истекающим сроком.")
-        return {"sent": 0, "skipped": 0, "errors": 0}
+        return {"sent": 0, "skipped": 0, "errors": 0, "skipped_already_today": 0}
 
     by_fio: dict[str, list] = {}
     for row in rows:
@@ -269,9 +288,18 @@ def send_email_notifications(dry_run: bool = False) -> dict:
     s = get_smtp_settings()
     admin_email = s["admin"]
 
-    sent = skipped = errors = 0
+    sent = skipped = errors = skipped_already_today = 0
 
     for fio, devices in by_fio.items():
+        devices, n_dup = _filter_devices_not_emailed_today(devices)
+        skipped_already_today += n_dup
+        if not devices:
+            print(
+                f"  Email: все приборы для «{fio or 'без ответственного'}» "
+                f"уже уведомлены сегодня ({n_dup} шт.)."
+            )
+            continue
+
         email = get_responsible_email(fio) or admin_email
         if not email:
             print(f"  Нет email для «{fio or 'без ответственного'}» — пропускаем.")
@@ -284,13 +312,30 @@ def send_email_notifications(dry_run: bool = False) -> dict:
         plain = _make_plain(fio, devices, today)
 
         if dry_run:
-            print(f"  [dry-run] {fio} → {email}: {len(devices)} приборов")
+            extra = f" (уже сегодня в логе: {n_dup})" if n_dup else ""
+            print(f"  [dry-run] {fio} → {email}: {len(devices)} приборов{extra}")
             sent += 1
             continue
 
         if send_email(email, subject, html, plain):
             sent += 1
+            conn = get_connection()
+            for d in devices:
+                conn.execute(
+                    """
+                    INSERT INTO notification_log (device_id, channel, message, status)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (d["id"], "email", subject, "sent"),
+                )
+            conn.commit()
+            conn.close()
         else:
             errors += 1
 
-    return {"sent": sent, "skipped": skipped, "errors": errors}
+    return {
+        "sent": sent,
+        "skipped": skipped,
+        "errors": errors,
+        "skipped_already_today": skipped_already_today,
+    }

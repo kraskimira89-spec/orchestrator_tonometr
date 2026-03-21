@@ -66,10 +66,11 @@ def main():
 
         email_result = send_email_notifications(dry_run=args.dry_run)
         logging.info(
-            "notify_daily Email: sent=%s skipped=%s errors=%s",
+            "notify_daily Email: sent=%s skipped=%s errors=%s skipped_already_today=%s",
             email_result.get("sent"),
             email_result.get("skipped"),
             email_result.get("errors"),
+            email_result.get("skipped_already_today", 0),
         )
     except Exception:
         logging.exception("notify_daily failed")
