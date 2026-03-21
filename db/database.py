@@ -35,6 +35,11 @@ def init_database():
         )
     """)
 
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN max_chat_id TEXT")
+    except Exception:
+        pass
+
     # Таблица приборов
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS devices (
