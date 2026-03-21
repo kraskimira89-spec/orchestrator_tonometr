@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -18,13 +18,14 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QSizePolicy,
+    QTableWidget,
+    QTableWidgetItem,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
-from db.database import get_connection, update_responsible_fio
+from db.database import get_connection, get_device_verifications, update_responsible_fio
 
 
 def _date_str_to_qdate(s: str) -> QDate:
@@ -162,6 +163,40 @@ class DeviceCardDialog(QDialog):
             f"padding:6px 20px; font-weight:bold; font-size:11pt;"
         )
         root.addWidget(status_lbl)
+
+        # ── история поверок ─────────────────────────────────────────────────
+        hist_title = QLabel("История поверок")
+        ht = QFont("Calibri", 10)
+        ht.setBold(True)
+        hist_title.setFont(ht)
+        root.addWidget(hist_title)
+
+        self.history_table = QTableWidget()
+        self.history_table.setColumnCount(4)
+        self.history_table.setHorizontalHeaderLabels(
+            ["Дата поверки", "Дата окончания", "Результат", "Комментарий"]
+        )
+        self.history_table.horizontalHeader().setStretchLastSection(True)
+        self.history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.history_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.history_table.setMaximumHeight(220)
+
+        did = device.get("id")
+        if did is not None:
+            rows = get_device_verifications(int(did))
+            self.history_table.setRowCount(len(rows))
+            for i, rec in enumerate(rows):
+                vd = rec.get("verification_date") or "—"
+                ed = rec.get("expiry_date") or "—"
+                rs = rec.get("result") or "—"
+                cm = (rec.get("comment") or "").replace("\n", " ")
+                for j, val in enumerate([vd, ed, rs, cm]):
+                    self.history_table.setItem(i, j, QTableWidgetItem(str(val)))
+            self.history_table.resizeColumnsToContents()
+        else:
+            self.history_table.setRowCount(0)
+
+        root.addWidget(self.history_table)
 
         # ── кнопки ────────────────────────────────────────────────────────
         buttons = QDialogButtonBox(

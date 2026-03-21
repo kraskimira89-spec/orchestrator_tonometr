@@ -212,7 +212,18 @@ def get_device_verifications(device_id):
     """, (device_id,))
     rows = cursor.fetchall()
     conn.close()
-    return rows
+    return [dict(row) for row in rows]
+
+
+def delete_device(device_id: int) -> None:
+    """Удаляет прибор, связанные поверки и записи лога уведомлений."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM notification_log WHERE device_id = ?", (device_id,))
+    cur.execute("DELETE FROM verifications WHERE device_id = ?", (device_id,))
+    cur.execute("DELETE FROM devices WHERE id = ?", (device_id,))
+    conn.commit()
+    conn.close()
 
 
 def update_responsible_fio(device_id: int, fio: str):
