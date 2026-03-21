@@ -164,7 +164,8 @@ class MainWindow(QMainWindow):
         self.side_panel.sig_import_excel.connect(self.on_import_excel)
         self.side_panel.sig_responsible.connect(self.on_responsible)
         self.side_panel.sig_dashboard.connect(self.on_dashboard)
-        self.side_panel.sig_caldav.connect(self.on_caldav)
+        self.side_panel.sig_caldav_yandex.connect(self.on_caldav_yandex)
+        self.side_panel.sig_caldav_mailru.connect(self.on_caldav_mailru)
         # поиск из панели подключаем к refresh_table
         self.side_panel.search_box.textChanged.connect(self.refresh_table)
         main_layout.addWidget(self.side_panel)
@@ -479,8 +480,11 @@ class MainWindow(QMainWindow):
     def on_dashboard(self):
         DashboardDialog(self).exec()
 
-    def on_caldav(self):
-        CalDAVSettingsDialog(self).exec()
+    def on_caldav_yandex(self):
+        CalDAVSettingsDialog(provider="yandex", parent=self).exec()
+
+    def on_caldav_mailru(self):
+        CalDAVSettingsDialog(provider="mailru", parent=self).exec()
 
     def on_send_notifications(self):
         reply = QMessageBox.question(

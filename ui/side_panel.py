@@ -136,11 +136,17 @@ class _FloatWindow(QWidget):
         dash_btn.clicked.connect(panel.sig_dashboard.emit)
         layout.addWidget(dash_btn)
 
-        cal_btn = QPushButton("📅  Синхр. календарь")
-        cal_btn.setStyleSheet(btn_style)
-        cal_btn.setFixedHeight(40)
-        cal_btn.clicked.connect(panel.sig_caldav.emit)
-        layout.addWidget(cal_btn)
+        cal_yandex_btn = QPushButton("📅  Яндекс.Календарь")
+        cal_yandex_btn.setStyleSheet(btn_style)
+        cal_yandex_btn.setFixedHeight(40)
+        cal_yandex_btn.clicked.connect(panel.sig_caldav_yandex.emit)
+        layout.addWidget(cal_yandex_btn)
+
+        cal_mail_btn = QPushButton("📅  Mail.ru Календарь")
+        cal_mail_btn.setStyleSheet(btn_style)
+        cal_mail_btn.setFixedHeight(40)
+        cal_mail_btn.clicked.connect(panel.sig_caldav_mailru.emit)
+        layout.addWidget(cal_mail_btn)
 
         layout.addStretch()
 
@@ -174,7 +180,8 @@ class SidePanel(QWidget):
     sig_import_excel = pyqtSignal()
     sig_responsible = pyqtSignal()
     sig_dashboard = pyqtSignal()
-    sig_caldav = pyqtSignal()
+    sig_caldav_yandex = pyqtSignal()
+    sig_caldav_mailru = pyqtSignal()
 
     DOCKED   = "docked"
     HIDDEN   = "hidden"
@@ -326,12 +333,19 @@ class SidePanel(QWidget):
         self.dashboard_btn.clicked.connect(self.sig_dashboard.emit)
         layout.addWidget(self.dashboard_btn)
 
-        self.caldav_btn = QPushButton("📅  Синхр. календарь")
-        self.caldav_btn.setStyleSheet(btn_style)
-        self.caldav_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.caldav_btn.setFixedHeight(40)
-        self.caldav_btn.clicked.connect(self.sig_caldav.emit)
-        layout.addWidget(self.caldav_btn)
+        self.caldav_yandex_btn = QPushButton("📅  Яндекс.Календарь")
+        self.caldav_yandex_btn.setStyleSheet(btn_style)
+        self.caldav_yandex_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.caldav_yandex_btn.setFixedHeight(40)
+        self.caldav_yandex_btn.clicked.connect(self.sig_caldav_yandex.emit)
+        layout.addWidget(self.caldav_yandex_btn)
+
+        self.caldav_mailru_btn = QPushButton("📅  Mail.ru Календарь")
+        self.caldav_mailru_btn.setStyleSheet(btn_style)
+        self.caldav_mailru_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.caldav_mailru_btn.setFixedHeight(40)
+        self.caldav_mailru_btn.clicked.connect(self.sig_caldav_mailru.emit)
+        layout.addWidget(self.caldav_mailru_btn)
 
         layout.addSpacing(4)
 
