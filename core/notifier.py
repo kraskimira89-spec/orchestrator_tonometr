@@ -30,6 +30,29 @@ from db.database import (  # noqa: E402
     get_max_user_id_for_fio,
 )
 
+# Лимит MAX на одно сообщение — 4000 символов; оставляем запас под футер и «часть n/m».
+MAX_MSG_LEN = 3800
+_FOOTER_RESERVE = 150
+
+
+def _split_into_chunks(header: str, lines: list[str]) -> list[str]:
+    """Разбивает список строк на сообщения не длиннее MAX_MSG_LEN (с запасом под футер)."""
+    limit = MAX_MSG_LEN - _FOOTER_RESERVE
+    chunks: list[str] = []
+    h = header.rstrip() + "\n\n"
+    h_cont = header.rstrip() + " (продолжение)\n\n"
+    current = h
+    for line in lines:
+        addition = line + "\n"
+        if len(current) + len(addition) > limit:
+            chunks.append(current.rstrip())
+            current = h_cont + addition
+        else:
+            current += addition
+    if current.strip():
+        chunks.append(current.rstrip())
+    return chunks
+
 
 def send_message(chat_id: str, text: str) -> bool:
     """Отправка сообщения в MAX: user_id в query, текст в JSON."""
@@ -160,25 +183,45 @@ def check_and_notify(dry_run: bool = False) -> dict:
 
         header = (
             f"Напоминания о поверке ({len(items)} шт.)\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━"
         )
-        text = header + "\n".join(blocks) + f"Оркестратор Поверки | {today_str}"
+        footer = f"Оркестратор Поверки | {today_str}"
+        body_chunks = _split_into_chunks(header, blocks)
+        final_parts: list[str] = []
+        n = len(body_chunks)
+        for i, body in enumerate(body_chunks, 1):
+            suffix = f" [часть {i}/{n}]" if n > 1 else ""
+            final_parts.append(f"{body}\n\n{footer}{suffix}")
+
+        combined_for_log = "\n\n---\n\n".join(final_parts)
 
         for device, _u, _d, _e in items:
             stats["messages"].append(
                 {
                     "chat_id": chat_id,
-                    "text": text,
+                    "text": combined_for_log,
                     "device_id": device.get("id"),
                 }
             )
 
         if dry_run:
+            for i, final_text in enumerate(final_parts, 1):
+                print(
+                    f"[DRY RUN] → chat_id={chat_id}, часть {i}/{len(final_parts)}, "
+                    f"{len(final_text)} симв."
+                )
+                print(final_text)
+                print()
             stats["sent"] += len(items)
             continue
 
-        ok = send_message(chat_id, text)
-        if ok:
+        all_ok = True
+        for final_text in final_parts:
+            if not send_message(chat_id, final_text):
+                all_ok = False
+                break
+
+        if all_ok:
             conn = get_connection()
             cur = conn.cursor()
             for device, _u, _d, _e in items:
@@ -188,7 +231,7 @@ def check_and_notify(dry_run: bool = False) -> dict:
                         (device_id, channel, message, status)
                     VALUES (?, ?, ?, ?)
                     """,
-                    (device.get("id"), "MAX", text, "sent"),
+                    (device.get("id"), "MAX", combined_for_log, "sent"),
                 )
                 stats["sent"] += 1
             conn.commit()
@@ -199,9 +242,9 @@ def check_and_notify(dry_run: bool = False) -> dict:
     return stats
 
 
-def send_notifications():
+def send_notifications(dry_run: bool = False):
     """Точка входа для планировщика и скриптов."""
-    return check_and_notify(dry_run=False)
+    return check_and_notify(dry_run=dry_run)
 
 
 if __name__ == "__main__":

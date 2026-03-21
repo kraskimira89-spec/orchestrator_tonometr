@@ -1,19 +1,20 @@
 """
 Ежедневный запуск уведомлений (планировщик Windows Task Scheduler).
 Запуск: python notify_daily.py
+Проверка без отправки: python notify_daily.py --dry-run
 Лог: logs/notify.log
 """
+import argparse
+import sys, os
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import logging
-import os
-import sys
+from datetime import datetime
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
-
-LOG_DIR = os.path.join(ROOT, "logs")
-os.makedirs(LOG_DIR, exist_ok=True)
-LOG_PATH = os.path.join(LOG_DIR, "notify.log")
+log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+os.makedirs(log_dir, exist_ok=True)
+LOG_PATH = os.path.join(log_dir, "notify.log")
 
 
 def _setup_logging():
@@ -29,12 +30,22 @@ def _setup_logging():
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Ежедневные уведомления MAX")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Не отправлять сообщения, только вывести фрагменты в консоль",
+    )
+    args = parser.parse_args()
+
     _setup_logging()
-    logging.info("notify_daily start")
+    logging.info("notify_daily start %s", datetime.now().isoformat(timespec="seconds"))
+    if args.dry_run:
+        logging.info("режим --dry-run")
     try:
         from core.notifier import send_notifications
 
-        result = send_notifications()
+        result = send_notifications(dry_run=args.dry_run)
         logging.info(
             "notify_daily done: sent=%s skipped=%s errors=%s",
             result.get("sent"),
