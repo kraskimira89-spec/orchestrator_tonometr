@@ -261,8 +261,7 @@ class DeviceCardDialog(QDialog):
 
         # Автосинхронизация CalDAV (не блокирует сохранение карточки)
         try:
-            from db.database import get_setting
-            from core.calendar_sync import sync_device
+            from core.calendar_sync import auto_sync_device
 
             expiry_for_sync = new_expiry or old_expiry
             if expiry_for_sync:
@@ -274,11 +273,8 @@ class DeviceCardDialog(QDialog):
                     "responsible_fio": new_resp,
                     "calendar_event_id": self.device.get("calendar_event_id"),
                 }
-                for provider in ("yandex", "mailru"):
-                    if get_setting(f"{provider}_caldav_url"):
-                        uid = sync_device(device_for_sync, expiry_for_sync, provider=provider)
-                        self.device["calendar_event_id"] = uid
-                        break
+                auto_sync_device(device_for_sync, expiry_for_sync)
+                self.device["calendar_event_id"] = device_for_sync.get("calendar_event_id")
         except Exception as e:
             print(f"CalDAV auto-sync: {e}")
 

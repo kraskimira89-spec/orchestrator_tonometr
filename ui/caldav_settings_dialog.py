@@ -3,34 +3,44 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QDialog,
-    QFormLayout,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QMessageBox,
-    QProgressBar,
-    QPushButton,
     QVBoxLayout,
+    QFormLayout,
+    QLineEdit,
+    QPushButton,
+    QLabel,
+    QHBoxLayout,
+    QProgressBar,
+    QMessageBox,
 )
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QFont
 
-from db.database import get_setting, set_setting  # noqa: E402
+from db.database import get_setting, set_setting
+from core.calendar_sync import test_connection, sync_all_devices
 
-PROVIDER_HINTS = {
+
+PROVIDERS = {
     "yandex": {
         "label": "Яндекс.Календарь",
-        "url_hint": "https://caldav.yandex.ru/calendars/ВАШ_ЛОГИН/",
-        "url_template": "https://caldav.yandex.ru/calendars/{login}/",
-        "login_hint": "логин без @yandex.ru",
+        "icon": "🟡",
+        "url_tmpl": "https://caldav.yandex.ru/calendars/{login}/",
+        "login_ph": "логин (без @yandex.ru)",
+        "pass_note": (
+            "Яндекс требует «пароль приложения» вместо основного.\n"
+            "Создайте его: passport.yandex.ru → Безопасность → Пароли приложений."
+        ),
     },
     "mailru": {
         "label": "Mail.ru Календарь",
-        "url_hint": "https://caldav.mail.ru/calendars/user@mail.ru/",
-        "url_template": "https://caldav.mail.ru/calendars/{login}@mail.ru/",
-        "login_hint": "логин@mail.ru",
+        "icon": "📧",
+        "url_tmpl": "https://caldav.mail.ru/calendars/{login}@mail.ru/",
+        "login_ph": "логин@mail.ru",
+        "pass_note": (
+            "Mail.ru требует «пароль для внешних приложений».\n"
+            "Создайте его: account.mail.ru → Безопасность → Пароли для приложений."
+        ),
     },
 }
 
@@ -44,8 +54,6 @@ class _SyncThread(QThread):
         self.provider = provider
 
     def run(self):
-        from core.calendar_sync import sync_all_devices
-
         result = sync_all_devices(
             provider=self.provider,
             progress_callback=lambda c, t: self.progress.emit(c, t),
@@ -57,10 +65,10 @@ class CalDAVSettingsDialog(QDialog):
     def __init__(self, provider: str = "yandex", parent=None):
         super().__init__(parent)
         self.provider = provider
-        self._info = PROVIDER_HINTS.get(provider, PROVIDER_HINTS["yandex"])
-        self._thread = None
-        self.setWindowTitle(f"Авторизация — {self._info['label']}")
-        self.setMinimumWidth(540)
+        info = PROVIDERS.get(provider, PROVIDERS["yandex"])
+        self.setWindowTitle(f"{info['icon']} Авторизация — {info['label']}")
+        self.setMinimumWidth(560)
+        self._info = info
         self._build_ui()
         self._load()
 
@@ -68,141 +76,147 @@ class CalDAVSettingsDialog(QDialog):
         info = self._info
         lay = QVBoxLayout(self)
 
-        title = QLabel(f"🔐 {info['label']}")
+        title = QLabel(f"{info['icon']} {info['label']}")
         title.setFont(QFont("Arial", 13, QFont.Weight.Bold))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(title)
-
-        hint = QLabel(
-            f"Введите данные учётной записи {info['label']}.\n"
-            "Пароль хранится только локально в БД приложения."
-        )
-        hint.setWordWrap(True)
-        hint.setStyleSheet("color: #555; font-size: 9px;")
-        lay.addWidget(hint)
 
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
         self.inp_login = QLineEdit()
-        self.inp_login.setPlaceholderText(info["login_hint"])
+        self.inp_login.setPlaceholderText(info["login_ph"])
         self.inp_login.textChanged.connect(self._auto_url)
 
         self.inp_pass = QLineEdit()
         self.inp_pass.setEchoMode(QLineEdit.EchoMode.Password)
-        self.inp_pass.setPlaceholderText("Пароль или пароль приложения")
+        self.inp_pass.setPlaceholderText("Пароль приложения")
 
         self.inp_url = QLineEdit()
-        self.inp_url.setPlaceholderText(info["url_hint"])
+        self.inp_url.setPlaceholderText(info["url_tmpl"].replace("{login}", "ВАШ_ЛОГИН"))
 
         self.inp_cal = QLineEdit()
-        self.inp_cal.setPlaceholderText("Оставьте пустым — первый календарь")
+        self.inp_cal.setPlaceholderText("Оставьте пустым — использовать первый календарь")
 
         form.addRow("Логин:", self.inp_login)
-        form.addRow("Пароль:", self.inp_pass)
+        form.addRow("Пароль приложения:", self.inp_pass)
         form.addRow("CalDAV URL:", self.inp_url)
         form.addRow("Имя календаря:", self.inp_cal)
         lay.addLayout(form)
 
-        note = QLabel(
-            "⚠️ Яндекс и Mail.ru могут требовать пароль приложения вместо обычного пароля."
-        )
+        note = QLabel(f"⚠️  {info['pass_note']}")
         note.setWordWrap(True)
-        note.setStyleSheet("color: #b05800; font-size: 9px; padding: 4px;")
+        note.setStyleSheet(
+            "color: #7a4500; background: #fff3cd; "
+            "border-radius: 4px; padding: 6px; font-size: 9px;"
+        )
         lay.addWidget(note)
+
+        remind_info = QLabel(
+            "📅  В календарь будут добавлены напоминания:\n"
+            "     за 2 месяца (60 дней) · за 1 месяц (30 дней) · "
+            "за 1 неделю (7 дней) · за 2 дня"
+        )
+        remind_info.setWordWrap(True)
+        remind_info.setStyleSheet(
+            "color: #0a4a00; background: #d4edda; "
+            "border-radius: 4px; padding: 6px; font-size: 9px;"
+        )
+        lay.addWidget(remind_info)
 
         self.lbl_status = QLabel("")
         self.lbl_status.setWordWrap(True)
         lay.addWidget(self.lbl_status)
 
-        self.progress = QProgressBar()
-        self.progress.setVisible(False)
-        lay.addWidget(self.progress)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        lay.addWidget(self.progress_bar)
 
-        btn_row = QHBoxLayout()
+        row1 = QHBoxLayout()
         btn_test = QPushButton("🔌 Проверить соединение")
         btn_test.clicked.connect(self._test)
         btn_save = QPushButton("💾 Сохранить")
         btn_save.clicked.connect(self._save)
-        btn_row.addWidget(btn_test)
-        btn_row.addWidget(btn_save)
-        lay.addLayout(btn_row)
+        row1.addWidget(btn_test)
+        row1.addWidget(btn_save)
+        lay.addLayout(row1)
 
-        self.btn_sync = QPushButton("🔄 Синхронизировать все приборы")
-        self.btn_sync.clicked.connect(self._sync_all)
-        lay.addWidget(self.btn_sync)
+        btn_sync = QPushButton("🔄 Синхронизировать все приборы в календарь")
+        btn_sync.clicked.connect(self._sync_all)
+        lay.addWidget(btn_sync)
 
         btn_close = QPushButton("Закрыть")
         btn_close.clicked.connect(self.accept)
         lay.addWidget(btn_close)
 
     def _auto_url(self, login: str):
-        if not login or self.inp_url.text().strip():
-            return
-        login = login.strip()
-        if self.provider == "mailru" and "@" in login:
-            login = login.split("@")[0]
-        if self.provider == "yandex" and "@" in login:
-            login = login.split("@")[0]
-        self.inp_url.setText(self._info["url_template"].replace("{login}", login))
-
-    def _keys(self) -> tuple[str, str, str, str]:
-        p = self.provider
-        return (
-            f"{p}_caldav_url",
-            f"{p}_caldav_username",
-            f"{p}_caldav_password",
-            f"{p}_caldav_calendar",
-        )
+        if login and not self.inp_url.text().strip():
+            tmpl = self._info["url_tmpl"]
+            self.inp_url.setText(tmpl.replace("{login}", login))
 
     def _load(self):
-        k_url, k_user, k_pass, k_cal = self._keys()
-        self.inp_login.setText(get_setting(k_user))
-        self.inp_pass.setText(get_setting(k_pass))
-        self.inp_url.setText(get_setting(k_url))
-        self.inp_cal.setText(get_setting(k_cal))
+        p = self.provider
+        self.inp_login.setText(get_setting(f"{p}_caldav_username"))
+        self.inp_pass.setText(get_setting(f"{p}_caldav_password"))
+        self.inp_url.setText(get_setting(f"{p}_caldav_url"))
+        self.inp_cal.setText(get_setting(f"{p}_caldav_calendar"))
 
     def _save(self):
-        k_url, k_user, k_pass, k_cal = self._keys()
-        set_setting(k_url, self.inp_url.text().strip())
-        set_setting(k_user, self.inp_login.text().strip())
-        set_setting(k_pass, self.inp_pass.text())
-        set_setting(k_cal, self.inp_cal.text().strip())
+        p = self.provider
+        set_setting(f"{p}_caldav_url", self.inp_url.text().strip())
+        set_setting(f"{p}_caldav_username", self.inp_login.text().strip())
+        set_setting(f"{p}_caldav_password", self.inp_pass.text())
+        set_setting(f"{p}_caldav_calendar", self.inp_cal.text().strip())
         self.lbl_status.setText("✅ Настройки сохранены.")
+        self.lbl_status.setStyleSheet("color: green;")
 
     def _test(self):
         self._save()
-        try:
-            from core.calendar_sync import test_connection
-
-            self.lbl_status.setText(test_connection(self.provider))
-        except Exception as e:
-            self.lbl_status.setText(f"❌ Ошибка: {e}")
+        self.lbl_status.setText("Проверяю соединение...")
+        self.lbl_status.setStyleSheet("color: grey;")
+        result = test_connection(self.provider)
+        self.lbl_status.setText(result)
+        color = "green" if result.startswith("✅") else "red"
+        self.lbl_status.setStyleSheet(f"color: {color};")
 
     def _sync_all(self):
         self._save()
-        self.progress.setVisible(True)
-        self.progress.setValue(0)
-        self.btn_sync.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
+        self.lbl_status.setText("Синхронизация запущена...")
+        self.lbl_status.setStyleSheet("color: grey;")
+
         self._thread = _SyncThread(self.provider)
-        self._thread.progress.connect(self._on_progress)
+        self._thread.progress.connect(
+            lambda c, t: self.progress_bar.setValue(int(c / t * 100) if t else 0)
+        )
         self._thread.done.connect(self._on_sync_done)
         self._thread.start()
 
-    def _on_progress(self, current: int, total: int):
-        if total <= 0:
-            self.progress.setRange(0, 0)
-            return
-        self.progress.setRange(0, 100)
-        self.progress.setValue(int(current / total * 100))
-
     def _on_sync_done(self, result: dict):
-        self.progress.setVisible(False)
-        self.btn_sync.setEnabled(True)
-        QMessageBox.information(
-            self,
-            "Синхронизация завершена",
-            f"Синхронизировано: {result['synced']}\n"
-            f"Пропущено (нет даты): {result['skipped']}\n"
-            f"Ошибок: {result['errors']}",
+        self.progress_bar.setVisible(False)
+        msg = (
+            f"✅ Готово: синхронизировано {result['synced']}, "
+            f"пропущено {result['skipped']}, ошибок {result['errors']}"
         )
+        self.lbl_status.setText(msg)
+        color = "green" if result["errors"] == 0 else "orange"
+        self.lbl_status.setStyleSheet(f"color: {color};")
+
+        if result["errors"]:
+            QMessageBox.warning(
+                self,
+                "Синхронизация завершена с ошибками",
+                f"Синхронизировано: {result['synced']}\n"
+                f"Пропущено (нет даты):  {result['skipped']}\n"
+                f"Ошибок: {result['errors']}\n\n"
+                "Проверьте консоль (python main.py) для деталей.",
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "Синхронизация завершена",
+                f"Все приборы синхронизированы с {self._info['label']}.\n\n"
+                f"Синхронизировано: {result['synced']}\n"
+                f"Пропущено (нет даты): {result['skipped']}",
+            )
