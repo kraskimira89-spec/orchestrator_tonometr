@@ -99,6 +99,11 @@ def init_database():
         )
     """)
 
+    try:
+        cursor.execute("ALTER TABLE responsible_persons ADD COLUMN email TEXT")
+    except Exception:
+        pass
+
     # Таблица лога уведомлений
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS notification_log (
@@ -275,7 +280,11 @@ def get_responsible_persons_rows():
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "SELECT id, fio, max_user_id FROM responsible_persons ORDER BY fio COLLATE NOCASE"
+        """
+        SELECT id, fio, max_user_id, IFNULL(email, '') AS email
+        FROM responsible_persons
+        ORDER BY fio COLLATE NOCASE
+        """
     )
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
@@ -296,6 +305,33 @@ def upsert_responsible_person(fio: str, max_user_id: int | None) -> None:
         ON CONFLICT(fio) DO UPDATE SET max_user_id = excluded.max_user_id
         """,
         (fio, max_user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_responsible_email(fio: str) -> str:
+    """Возвращает email ответственного по ФИО."""
+    if not fio:
+        return ""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT email FROM responsible_persons WHERE fio=?",
+        (fio.strip(),),
+    ).fetchone()
+    conn.close()
+    return (row[0] or "") if row else ""
+
+
+def set_responsible_person_email(fio: str, email: str) -> None:
+    """Сохраняет email в справочнике по ФИО."""
+    fio = (fio or "").strip()
+    if not fio:
+        return
+    conn = get_connection()
+    conn.execute(
+        "UPDATE responsible_persons SET email = ? WHERE fio = ?",
+        ((email or "").strip(), fio),
     )
     conn.commit()
     conn.close()

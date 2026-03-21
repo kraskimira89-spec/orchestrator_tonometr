@@ -33,6 +33,7 @@ from ui.import_excel_dialog import ImportExcelDialog
 from ui.responsible_dialog import ResponsibleDialog
 from ui.dashboard_dialog import DashboardDialog
 from ui.caldav_settings_dialog import CalDAVSettingsDialog
+from ui.email_settings_dialog import EmailSettingsDialog
 
 
 # ── Делегат: жирная черта под строкой заголовков ──────────────────────────────
@@ -166,6 +167,7 @@ class MainWindow(QMainWindow):
         self.side_panel.sig_dashboard.connect(self.on_dashboard)
         self.side_panel.sig_caldav_yandex.connect(self.on_caldav_yandex)
         self.side_panel.sig_caldav_mailru.connect(self.on_caldav_mailru)
+        self.side_panel.sig_email_settings.connect(self.on_email_settings)
         # поиск из панели подключаем к refresh_table
         self.side_panel.search_box.textChanged.connect(self.refresh_table)
         main_layout.addWidget(self.side_panel)
@@ -485,6 +487,9 @@ class MainWindow(QMainWindow):
 
     def on_caldav_mailru(self):
         CalDAVSettingsDialog(provider="mailru", parent=self).exec()
+
+    def on_email_settings(self):
+        EmailSettingsDialog(self).exec()
 
     def on_send_notifications(self):
         reply = QMessageBox.question(

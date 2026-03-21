@@ -1,5 +1,6 @@
 """
 Ежедневный запуск уведомлений (планировщик Windows Task Scheduler).
+MAX (core.notifier) и Email (core.email_notifier).
 Запуск: python notify_daily.py
 Проверка без отправки: python notify_daily.py --dry-run
 Лог: logs/notify.log
@@ -38,7 +39,7 @@ def _setup_logging():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Ежедневные уведомления MAX")
+    parser = argparse.ArgumentParser(description="Ежедневные уведомления MAX и Email")
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -55,10 +56,20 @@ def main():
 
         result = send_notifications(dry_run=args.dry_run)
         logging.info(
-            "notify_daily done: sent=%s skipped=%s errors=%s",
+            "notify_daily MAX: sent=%s skipped=%s errors=%s",
             result.get("sent"),
             result.get("skipped"),
             result.get("errors"),
+        )
+
+        from core.email_notifier import send_email_notifications
+
+        email_result = send_email_notifications(dry_run=args.dry_run)
+        logging.info(
+            "notify_daily Email: sent=%s skipped=%s errors=%s",
+            email_result.get("sent"),
+            email_result.get("skipped"),
+            email_result.get("errors"),
         )
     except Exception:
         logging.exception("notify_daily failed")

@@ -148,6 +148,12 @@ class _FloatWindow(QWidget):
         cal_mail_btn.clicked.connect(panel.sig_caldav_mailru.emit)
         layout.addWidget(cal_mail_btn)
 
+        email_btn = QPushButton("📨  Email-уведомления")
+        email_btn.setStyleSheet(btn_style)
+        email_btn.setFixedHeight(40)
+        email_btn.clicked.connect(panel.sig_email_settings.emit)
+        layout.addWidget(email_btn)
+
         layout.addStretch()
 
         # кнопка «Прикрепить →» (стрелка вправо — прикрепляем обратно)
@@ -182,6 +188,7 @@ class SidePanel(QWidget):
     sig_dashboard = pyqtSignal()
     sig_caldav_yandex = pyqtSignal()
     sig_caldav_mailru = pyqtSignal()
+    sig_email_settings = pyqtSignal()
 
     DOCKED   = "docked"
     HIDDEN   = "hidden"
@@ -346,6 +353,13 @@ class SidePanel(QWidget):
         self.caldav_mailru_btn.setFixedHeight(40)
         self.caldav_mailru_btn.clicked.connect(self.sig_caldav_mailru.emit)
         layout.addWidget(self.caldav_mailru_btn)
+
+        self.email_btn = QPushButton("📨  Email-уведомления")
+        self.email_btn.setStyleSheet(btn_style)
+        self.email_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.email_btn.setFixedHeight(40)
+        self.email_btn.clicked.connect(self.sig_email_settings.emit)
+        layout.addWidget(self.email_btn)
 
         layout.addSpacing(4)
 
