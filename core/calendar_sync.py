@@ -10,8 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import uuid
 from datetime import date, timedelta
-
-import caldav
+from typing import Any
 
 from db.database import (
     get_connection,
@@ -28,6 +27,24 @@ REMIND_LABELS = {
     2: "2 дня",
 }
 
+_CALDAV_MOD = None
+
+
+def _get_caldav():
+    """Ленивый импорт: приложение стартует без pip install caldav."""
+    global _CALDAV_MOD
+    if _CALDAV_MOD is not None:
+        return _CALDAV_MOD
+    try:
+        import caldav as m
+
+        _CALDAV_MOD = m
+        return m
+    except ModuleNotFoundError as e:
+        raise ModuleNotFoundError(
+            "Не установлен пакет «caldav». Выполните: python -m pip install caldav"
+        ) from e
+
 
 def get_caldav_settings(provider: str) -> dict:
     p = provider
@@ -39,7 +56,8 @@ def get_caldav_settings(provider: str) -> dict:
     }
 
 
-def connect_caldav(provider: str) -> caldav.Calendar:
+def connect_caldav(provider: str) -> Any:
+    caldav = _get_caldav()
     s = get_caldav_settings(provider)
     if not s["url"] or not s["username"] or not s["password"]:
         raise ValueError(
@@ -77,7 +95,7 @@ def _ical_escape(text: str) -> str:
     )
 
 
-def _find_event_by_uid(cal: caldav.Calendar, uid: str):
+def _find_event_by_uid(cal: Any, uid: str):
     fn = getattr(cal, "event_by_uid", None)
     if callable(fn):
         try:
@@ -94,7 +112,7 @@ def _find_event_by_uid(cal: caldav.Calendar, uid: str):
     return None
 
 
-def _search_event_by_uid(cal: caldav.Calendar, uid: str):
+def _search_event_by_uid(cal: Any, uid: str):
     search = getattr(cal, "search", None)
     if callable(search):
         try:
@@ -153,7 +171,7 @@ def _make_vcal(uid: str, device: dict, expiry_date: str) -> str:
     )
 
 
-def _add_event(cal: caldav.Calendar, vcal: str):
+def _add_event(cal: Any, vcal: str):
     add = getattr(cal, "add_event", None)
     if callable(add):
         return add(vcal)
