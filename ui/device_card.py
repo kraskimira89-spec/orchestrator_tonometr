@@ -26,6 +26,7 @@ from PyQt6.QtWidgets import (
 )
 
 from db.database import get_connection, get_device_verifications, update_responsible_fio
+from ui.documents_widget import DocumentsWidget
 
 
 def _date_str_to_qdate(s: str) -> QDate:
@@ -197,6 +198,16 @@ class DeviceCardDialog(QDialog):
             self.history_table.setRowCount(0)
 
         root.addWidget(self.history_table)
+
+        # ── документы (свидетельства) ───────────────────────────────────────
+        if did is not None:
+            sep2 = QFrame()
+            sep2.setFrameShape(QFrame.Shape.HLine)
+            sep2.setStyleSheet("color: #ccc;")
+            root.addWidget(sep2)
+
+            self.docs_widget = DocumentsWidget(device_id=int(did), parent=self)
+            root.addWidget(self.docs_widget)
 
         # ── кнопки ────────────────────────────────────────────────────────
         buttons = QDialogButtonBox(

@@ -1,10 +1,12 @@
-import sqlite3
 import os
+import shutil
+import sqlite3
 from datetime import date
 
 # Путь к файлу базы данных
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "data", "orchestrator.db")
+DOCUMENTS_DIR = os.path.join(BASE_DIR, "documents")
 
 
 def get_connection():
@@ -106,6 +108,17 @@ def init_database():
             message   TEXT,
             sent_at   TEXT DEFAULT (datetime('now')),
             status    TEXT DEFAULT 'ok'
+        )
+    """)
+
+    # Прикреплённые документы к прибору (файлы в documents/<device_id>/)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS device_documents (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_id   INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+            filename    TEXT NOT NULL,
+            filepath    TEXT NOT NULL,
+            uploaded_at TEXT DEFAULT (datetime('now'))
         )
     """)
 
@@ -233,6 +246,9 @@ def delete_device(device_id: int) -> None:
     cur.execute("DELETE FROM devices WHERE id = ?", (device_id,))
     conn.commit()
     conn.close()
+    doc_dir = os.path.join(DOCUMENTS_DIR, str(device_id))
+    if os.path.isdir(doc_dir):
+        shutil.rmtree(doc_dir, ignore_errors=True)
 
 
 def update_responsible_fio(device_id: int, fio: str):
@@ -293,6 +309,67 @@ def get_max_user_id_for_fio(fio: str) -> int | None:
     if row and row[0] is not None:
         return int(row[0])
     return None
+
+
+def get_device_documents(device_id: int) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT id, filename, filepath, uploaded_at
+        FROM device_documents
+        WHERE device_id = ?
+        ORDER BY uploaded_at DESC
+        """,
+        (device_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def attach_document(device_id: int, src_path: str) -> dict:
+    """Копирует файл в documents/<device_id>/, сохраняет запись в БД."""
+    dest_dir = os.path.join(DOCUMENTS_DIR, str(device_id))
+    os.makedirs(dest_dir, exist_ok=True)
+
+    filename = os.path.basename(src_path)
+    dest_path = os.path.join(dest_dir, filename)
+
+    base, ext = os.path.splitext(filename)
+    counter = 1
+    while os.path.exists(dest_path):
+        dest_path = os.path.join(dest_dir, f"{base}_{counter}{ext}")
+        filename = f"{base}_{counter}{ext}"
+        counter += 1
+
+    shutil.copy2(src_path, dest_path)
+
+    conn = get_connection()
+    conn.execute(
+        """
+        INSERT INTO device_documents (device_id, filename, filepath)
+        VALUES (?, ?, ?)
+        """,
+        (device_id, filename, dest_path),
+    )
+    conn.commit()
+    conn.close()
+    return {"filename": filename, "filepath": dest_path}
+
+
+def delete_document(doc_id: int) -> None:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT filepath FROM device_documents WHERE id = ?",
+        (doc_id,),
+    ).fetchone()
+    if row:
+        try:
+            os.remove(row["filepath"])
+        except FileNotFoundError:
+            pass
+        conn.execute("DELETE FROM device_documents WHERE id = ?", (doc_id,))
+        conn.commit()
+    conn.close()
 
 
 if __name__ == "__main__":
