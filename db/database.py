@@ -135,7 +135,7 @@ def get_all_devices():
     cursor.execute("SELECT * FROM v_device_status ORDER BY type, name")
     rows = cursor.fetchall()
     conn.close()
-    return rows
+    return [dict(row) for row in rows]
 
 
 def get_device_verifications(device_id):
