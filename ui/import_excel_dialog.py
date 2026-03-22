@@ -31,6 +31,14 @@ from db.database import get_connection
 
 SHEETS = ["Алкометры", "Тонометры"]
 
+# Индексы столбцов как в data/journal.xlsx (строка с «Инв…», далее данные). 0-based.
+JC_LOCATION = 1
+JC_NAME = 2
+JC_INV = 3
+JC_KIND = 4  # «Тип прибора» в файле; поле devices.type в БД = имя листа (Алкометры/Тонометры)
+JC_EXPIRY = 5
+JC_NOTE = 11
+
 SKIP_INV = {
     "",
     "инв. номер",
@@ -84,18 +92,20 @@ def load_excel_devices(path):
             def get(idx):
                 return row[idx] if idx < len(row) else None
 
-            inv = str(get(2) or "").strip()
+            # 0№ 1Место 2Наименование 3Инв.№ 4Тип прибора 5Срок … 11Примечание
+            location = str(get(JC_LOCATION) or "").strip()
+            name = str(get(JC_NAME) or "").strip()
+            inv = str(get(JC_INV) or "").strip()
             low = inv.lower()
             if low in SKIP_INV or not inv:
                 continue
             if inv.isdigit() and len(inv) <= 2:
                 continue
 
-            name = str(get(1) or "").strip()
-            location = str(get(3) or "").strip()
-            last_date = parse_date(get(4))
-            expiry_date = parse_date(get(5))
-            responsible = str(get(6) or "").strip()
+            last_date = None
+            expiry_date = parse_date(get(JC_EXPIRY))
+            responsible = ""
+            note = str(get(JC_NOTE) or "").strip()
 
             devices.append(
                 {
@@ -106,6 +116,7 @@ def load_excel_devices(path):
                     "last_verification_date": last_date,
                     "expiry_date": expiry_date,
                     "responsible_fio": responsible,
+                    "note": note,
                 }
             )
     return devices
@@ -117,6 +128,7 @@ def get_existing_device(inv_number: str, device_type: str):
     row = conn.execute(
         """
         SELECT d.id, d.type, d.name, d.inventory_number, d.location, d.responsible_fio,
+               d.note,
                (SELECT MAX(v.expiry_date) FROM verifications v WHERE v.device_id = d.id) AS expiry_date
         FROM devices d
         WHERE TRIM(IFNULL(d.inventory_number, '')) = TRIM(?)
@@ -131,11 +143,11 @@ def get_existing_device(inv_number: str, device_type: str):
 def insert_device(d: dict) -> None:
     conn = get_connection()
     cur = conn.cursor()
-    name = (d.get("name") or "").strip() or "—"
+    name = (d.get("name") or "").strip()
     cur.execute(
         """
-        INSERT INTO devices (type, name, inventory_number, location, responsible_fio)
-        VALUES (?,?,?,?,?)
+        INSERT INTO devices (type, name, inventory_number, location, responsible_fio, note)
+        VALUES (?,?,?,?,?,?)
         """,
         (
             d["device_type"],
@@ -143,6 +155,7 @@ def insert_device(d: dict) -> None:
             d["inventory_number"],
             (d.get("location") or "").strip(),
             (d.get("responsible_fio") or "").strip(),
+            (d.get("note") or "").strip(),
         ),
     )
     dev_id = cur.lastrowid
@@ -167,12 +180,18 @@ def insert_device(d: dict) -> None:
 def update_device(dev_id: int, d: dict) -> None:
     conn = get_connection()
     cur = conn.cursor()
-    name = (d.get("name") or "").strip() or "—"
+    name = (d.get("name") or "").strip()
     cur.execute(
         """
-        UPDATE devices SET name=?, location=?, responsible_fio=? WHERE id=?
+        UPDATE devices SET name=?, location=?, responsible_fio=?, note=? WHERE id=?
         """,
-        (name, (d.get("location") or "").strip(), (d.get("responsible_fio") or "").strip(), dev_id),
+        (
+            name,
+            (d.get("location") or "").strip(),
+            (d.get("responsible_fio") or "").strip(),
+            (d.get("note") or "").strip(),
+            dev_id,
+        ),
     )
     if d.get("expiry_date"):
         cur.execute(
@@ -306,6 +325,7 @@ class ImportExcelDialog(QDialog):
                 or (existing.get("location") or "").strip() != (d.get("location") or "").strip()
                 or (existing.get("responsible_fio") or "").strip()
                 != (d.get("responsible_fio") or "").strip()
+                or (existing.get("note") or "").strip() != (d.get("note") or "").strip()
                 or db_exp != ex_exp
             )
             if changed:

@@ -100,7 +100,7 @@ def compute_digest(devices: list[dict]) -> dict[str, Any]:
 def format_digest_plain(digest: dict[str, Any], recipient_hint: str = "") -> str:
     """Текст для MAX / plain email."""
     lines: list[str] = []
-    lines.append(f"📊 Утренняя сводка «Оркестратор Поверки» — {digest['date_str']}")
+    lines.append(f"📊 Утренняя сводка «PoverkiVSE» — {digest['date_str']}")
     if recipient_hint:
         lines.append(f"Получатель: {recipient_hint}")
     lines.append("")
@@ -173,7 +173,7 @@ def format_digest_html(digest: dict[str, Any]) -> str:
 <div style="max-width:720px;margin:0 auto;padding:16px;">
   <div style="background:#2c3e50;color:#fff;padding:14px 18px;border-radius:6px 6px 0 0;">
     <h2 style="margin:0;">📊 Утренняя сводка</h2>
-    <p style="margin:6px 0 0;font-size:12px;opacity:.9;">Оркестратор Поверки · {digest["date_str"]}</p>
+    <p style="margin:6px 0 0;font-size:12px;opacity:.9;">PoverkiVSE · {digest["date_str"]}</p>
   </div>
   <div style="border:1px solid #dee2e6;border-top:0;padding:16px;background:#f8f9fa;">
     <h3 style="margin-top:0;">По стадиям</h3>

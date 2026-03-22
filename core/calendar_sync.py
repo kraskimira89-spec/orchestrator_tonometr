@@ -158,7 +158,7 @@ def _make_vcal(uid: str, device: dict, expiry_date: str) -> str:
     return (
         "BEGIN:VCALENDAR\n"
         "VERSION:2.0\n"
-        "PRODID:-//OrchestratorTonometr//RU\n"
+        "PRODID:-//PoverkiVSE//RU\n"
         "BEGIN:VEVENT\n"
         f"UID:{uid}\n"
         f"SUMMARY:{_ical_escape(summary)}\n"

@@ -24,6 +24,8 @@ from ui.main_window import MainWindow
 
 def main() -> None:
     app = QApplication(sys.argv)
+    app.setApplicationName("PoverkiVSE")
+    app.setApplicationDisplayName("PoverkiVSE")
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

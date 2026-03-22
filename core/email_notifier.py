@@ -127,7 +127,7 @@ def send_email(
 def test_smtp(to_addr: str) -> str:
     digest = compute_digest([])
     plain = (
-        "Тест SMTP — Оркестратор Поверки.\n\n"
+        "Тест SMTP — PoverkiVSE.\n\n"
         + format_digest_plain(digest).replace(
             "Подробный список приборов — в приложении.",
             "Если вы читаете это письмо, SMTP настроен верно.",
@@ -142,7 +142,7 @@ def test_smtp(to_addr: str) -> str:
     fn = f"test_poverki_svodka_{date.today().isoformat()}.xlsx"
     ok = send_email(
         to_addr,
-        "✅ Тест SMTP — Оркестратор Поверки",
+        "✅ Тест SMTP — PoverkiVSE",
         html,
         plain,
         attachment=(xlsx, fn),

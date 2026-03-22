@@ -27,7 +27,7 @@ def build_digest_xlsx(digest: dict[str, Any], devices: list[dict]) -> bytes:
 
     ws = wb.active
     ws.title = "Сводка"
-    ws.append(["Оркестратор Поверки — сводка уведомлений"])
+    ws.append(["PoverkiVSE — сводка уведомлений"])
     ws["A1"].font = Font(bold=True, size=12)
     ws.append([f"Дата: {digest['date_str']}"])
     ws.append([])

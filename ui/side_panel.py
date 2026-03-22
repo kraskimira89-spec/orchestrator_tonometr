@@ -167,6 +167,24 @@ class _FloatWindow(QWidget):
         email_btn.clicked.connect(panel.sig_email_settings.emit)
         layout.addWidget(email_btn)
 
+        clear_db_btn = QPushButton("🗑  Очистить базу данных…")
+        clear_db_btn.setStyleSheet(
+            btn_style
+            + "QPushButton { color: #8B0000; border-color: #CC6666; }"
+            + "QPushButton:hover { background: #FFEBEE; }"
+        )
+        clear_db_btn.setFixedHeight(40)
+        clear_db_btn.setToolTip("Удалить все приборы, поверки и прикреплённые документы")
+        clear_db_btn.clicked.connect(panel.sig_clear_database.emit)
+        layout.addWidget(clear_db_btn)
+
+        help_btn = QPushButton("❓  Справка")
+        help_btn.setStyleSheet(btn_style)
+        help_btn.setFixedHeight(40)
+        help_btn.setToolTip("Открыть справку в браузере")
+        help_btn.clicked.connect(panel.sig_help.emit)
+        layout.addWidget(help_btn)
+
         layout.addStretch()
 
         # кнопка «Прикрепить →» (стрелка вправо — прикрепляем обратно)
@@ -202,6 +220,8 @@ class SidePanel(QWidget):
     sig_caldav_yandex = pyqtSignal()
     sig_caldav_mailru = pyqtSignal()
     sig_email_settings = pyqtSignal()
+    sig_clear_database = pyqtSignal()
+    sig_help = pyqtSignal()
     sig_search_find = pyqtSignal()
     sig_search_next = pyqtSignal()
     sig_search_prev = pyqtSignal()
@@ -413,6 +433,27 @@ class SidePanel(QWidget):
         self.email_btn.setFixedHeight(40)
         self.email_btn.clicked.connect(self.sig_email_settings.emit)
         layout.addWidget(self.email_btn)
+
+        danger_style = (
+            btn_style
+            + "QPushButton { color: #8B0000; border-color: #CC6666; }"
+            + "QPushButton:hover { background: #FFEBEE; }"
+        )
+        self.clear_db_btn = QPushButton("🗑  Очистить базу данных…")
+        self.clear_db_btn.setStyleSheet(danger_style)
+        self.clear_db_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.clear_db_btn.setFixedHeight(40)
+        self.clear_db_btn.setToolTip("Удалить все приборы, поверки и прикреплённые документы")
+        self.clear_db_btn.clicked.connect(self.sig_clear_database.emit)
+        layout.addWidget(self.clear_db_btn)
+
+        self.help_btn = QPushButton("❓  Справка")
+        self.help_btn.setStyleSheet(btn_style)
+        self.help_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.help_btn.setFixedHeight(40)
+        self.help_btn.setToolTip("Открыть справку в браузере")
+        self.help_btn.clicked.connect(self.sig_help.emit)
+        layout.addWidget(self.help_btn)
 
         layout.addSpacing(4)
 

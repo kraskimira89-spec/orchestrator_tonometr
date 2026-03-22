@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <title>PoverkiVSE — полная справка</title>
+  <style>
+    :root {
+      --bg: #f4f6fa;
+      --card: #fff;
+      --text: #1a1d26;
+      --muted: #5a6478;
+      --accent: #1565c0;
+      --border: #d0d8e6;
+      --ok: #1b5e20;
+      --warn: #b71c1c;
+      --flow-bg: #eef3fb;
+    }
+    * { box-sizing: border-box; }
+    html {
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+    }
+    img { max-width: 100%; height: auto; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      font-size: clamp(14px, 0.28rem + 2.2vw, 17px);
+      line-height: 1.55;
+      color: var(--text);
+      background: var(--bg);
+      overflow-x: hidden;
+    }
+    /* Шапка прокручивается; закреплена только строка меню (nav.toc) */
+    .brand-bar {
+      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%);
+      color: #fff;
+      padding: 0.55rem max(clamp(0.65rem, 3vw, 1rem), env(safe-area-inset-right, 0px)) 0.55rem
+        max(clamp(0.65rem, 3vw, 1rem), env(safe-area-inset-left, 0px));
+    }
+    .brand-bar .brand-inner {
+      max-width: 58rem;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: clamp(0.65rem, 2.5vw, 1rem);
+    }
+    .brand-bar .brand-logo {
+      flex-shrink: 0;
+      width: 72px;
+      height: 72px;
+    }
+    .brand-bar .brand-logo img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: center;
+      display: block;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.22);
+    }
+    .brand-bar .brand-text { min-width: 0; }
+    .brand-bar .org-title {
+      margin: 0;
+      font-size: clamp(0.72rem, 0.55rem + 1.1vw, 0.95rem);
+      font-weight: 700;
+      line-height: 1.25;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    .brand-bar .app-line {
+      margin: 0.2rem 0 0;
+      font-size: clamp(0.85rem, 0.75rem + 0.5vw, 1rem);
+      font-weight: 600;
+      line-height: 1.2;
+    }
+    .brand-bar .tagline {
+      margin: 0.15rem 0 0;
+      font-size: clamp(0.68rem, 0.62rem + 0.35vw, 0.8rem);
+      opacity: 0.92;
+      line-height: 1.35;
+    }
+    nav.toc {
+      position: sticky;
+      top: env(safe-area-inset-top, 0px);
+      z-index: 100;
+      background: #f5f7fb;
+      border-bottom: 1px solid var(--border);
+      padding: 0.4rem max(clamp(0.65rem, 3vw, 1rem), env(safe-area-inset-right, 0px)) 0.4rem
+        max(clamp(0.65rem, 3vw, 1rem), env(safe-area-inset-left, 0px));
+      margin: 0;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    nav.toc ul {
+      margin: 0 auto;
+      padding: 0;
+      max-width: min(58rem, 100%);
+      list-style: none;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem 0.75rem;
+      align-items: center;
+      justify-content: flex-start;
+    }
+    nav.toc li { flex: 0 1 auto; }
+    nav.toc a {
+      color: #0d47a1;
+      font-weight: 600;
+      text-decoration: none;
+      font-size: clamp(0.8rem, 0.75rem + 0.35vw, 0.9rem);
+      display: inline-block;
+      padding: 0.35rem 0.15rem;
+      min-height: 2.5rem;
+      line-height: 1.35;
+      box-sizing: border-box;
+    }
+    nav.toc a:hover { text-decoration: underline; color: #1565c0; }
+    main {
+      width: 100%;
+      max-width: min(58rem, 100%);
+      margin: 0 auto;
+      padding: clamp(0.65rem, 2vw, 1rem) clamp(0.65rem, 4vw, 1.25rem) clamp(2rem, 6vw, 3rem);
+      padding-left: max(clamp(0.65rem, 4vw, 1.25rem), env(safe-area-inset-left, 0px));
+      padding-right: max(clamp(0.65rem, 4vw, 1.25rem), env(safe-area-inset-right, 0px));
+    }
+    section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: clamp(6px, 1.5vw, 10px);
+      padding: clamp(0.85rem, 2.5vw, 1.15rem) clamp(0.85rem, 3vw, 1.25rem);
+      margin-bottom: clamp(0.85rem, 2vw, 1.15rem);
+    }
+    section h2 {
+      margin: 0 0 0.65rem;
+      font-size: clamp(1.05rem, 0.95rem + 0.6vw, 1.2rem);
+      color: #0d2744;
+      border-bottom: 2px solid #e3eaf5;
+      padding-bottom: 0.35rem;
+    }
+    section h3 {
+      margin: 1rem 0 0.4rem;
+      font-size: clamp(0.95rem, 0.88rem + 0.35vw, 1.05rem);
+      color: #243047;
+    }
+    p { margin: 0.45rem 0; }
+    ul { margin: 0.4rem 0 0.4rem 1.15rem; }
+    li { margin: 0.28rem 0; }
+    .muted { color: var(--muted); font-size: 0.92rem; }
+    code {
+      font-family: ui-monospace, Consolas, "Courier New", monospace;
+      font-size: 0.88em;
+      background: rgba(0,0,0,.06);
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+      word-break: break-word;
+    }
+    .table-scroll {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      margin: 0.5rem 0;
+      border-radius: 6px;
+    }
+    table.msg {
+      width: 100%;
+      min-width: 320px;
+      border-collapse: collapse;
+      font-size: clamp(0.78rem, 0.72rem + 0.35vw, 0.88rem);
+      margin: 0;
+    }
+    table.msg th, table.msg td {
+      border: 1px solid var(--border);
+      padding: clamp(0.35rem, 1.5vw, 0.5rem) clamp(0.4rem, 2vw, 0.55rem);
+      vertical-align: top;
+      word-wrap: break-word;
+      overflow-wrap: anywhere;
+    }
+    table.msg th { background: #e8eef7; text-align: left; }
+    .kbd { border: 1px solid #bbb; border-radius: 4px; padding: 0.05em 0.4em; background: #f5f5f5; font-size: 0.9em; }
+    .flow {
+      background: var(--flow-bg);
+      border: 1px dashed #9db4d8;
+      border-radius: 8px;
+      padding: clamp(0.5rem, 2vw, 0.65rem) clamp(0.55rem, 2.5vw, 0.85rem);
+      margin: 0.5rem 0;
+      font-size: clamp(0.88rem, 0.82rem + 0.35vw, 0.95rem);
+      line-height: 1.75;
+      overflow-wrap: anywhere;
+    }
+    .flow .arr { color: var(--accent); font-weight: 700; padding: 0 0.2em; }
+    .btn-list dt { font-weight: 600; margin-top: 0.65rem; color: #1a3a5c; }
+    .btn-list dt:first-child { margin-top: 0; }
+    .btn-list dd { margin: 0.15rem 0 0 0; padding-left: 0; color: var(--muted); }
+    figure.shot { margin: 0.75rem 0; }
+    figure.shot img {
+      max-width: 100%; height: auto; display: block;
+      border: 1px solid var(--border); border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.08);
+    }
+    figure.shot figcaption {
+      margin-top: 0.45rem; font-size: 0.88rem; color: var(--muted); line-height: 1.45;
+    }
+    .contact-box {
+      background: #eceff1;
+      color: #263238;
+      border: 1px solid #b0bec5;
+      border-radius: 8px;
+      padding: 0.65rem 0.9rem;
+      margin: 0.75rem 0;
+    }
+    .contact-box a { color: #0d47a1; font-weight: 600; }
+    .contact-box a:hover { color: #c62828; }
+    .org-footer {
+      max-width: min(58rem, 100%);
+      margin: 0 auto;
+      padding: 0 max(clamp(0.65rem, 4vw, 1.25rem), env(safe-area-inset-left, 0px))
+        max(1.5rem, env(safe-area-inset-bottom, 0px))
+        max(clamp(0.65rem, 4vw, 1.25rem), env(safe-area-inset-right, 0px));
+      text-align: center;
+    }
+    .org-footer .org-card {
+      display: inline-block;
+      background: #eceff1;
+      border: 1px solid #b0bec5;
+      border-radius: 10px;
+      padding: 0.85rem 1.25rem;
+      color: #263238;
+      font-size: clamp(0.88rem, 0.82rem + 0.35vw, 0.95rem);
+      line-height: 1.65;
+      text-align: left;
+    }
+    .org-footer .org-card a { color: #0d47a1; font-weight: 600; word-break: break-all; }
+    .org-footer .org-card a:hover { color: #c62828; }
+    footer {
+      text-align: center;
+      padding: 0;
+      padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+      font-size: clamp(0.78rem, 0.72rem + 0.3vw, 0.85rem);
+      color: var(--muted);
+    }
+    .tag {
+      display: inline-block;
+      background: #e3f2fd;
+      color: #0d47a1;
+      padding: 0.1em 0.45em;
+      border-radius: 4px;
+      font-size: 0.82em;
+      font-weight: 600;
+    }
+    a:focus-visible {
+      outline: 2px solid #1565c0;
+      outline-offset: 2px;
+    }
+    @media (max-width: 380px) {
+      nav.toc ul { gap: 0.25rem 0.5rem; }
+      nav.toc a { min-height: 2.25rem; padding: 0.4rem 0.1rem; }
+    }
+    @media (min-width: 900px) {
+      nav.toc ul { justify-content: flex-start; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      nav.toc { box-shadow: 0 1px 0 rgba(0,0,0,.1); }
+    }
+  </style>
+</head>
+<body>
+  <header class="brand-bar">
+    <div class="brand-inner">
+      <div class="brand-logo">
+        <img src="app-logo.png" alt="Логотип">
+      </div>
+      <div class="brand-text">
+        <p class="org-title">Служба скорой медицинской помощи</p>
+        <p class="app-line">PoverkiVSE</p>
+        <p class="tagline">Справка: окна, кнопки, сообщения и типовые сценарии</p>
+      </div>
+    </div>
+  </header>
+  <nav class="toc" aria-label="Разделы справки">
+    <ul>
+      <li><a href="#main">Главное окно</a></li>
+      <li><a href="#panel">Панель «Действия»</a></li>
+      <li><a href="#dialogs">Диалоги</a></li>
+      <li><a href="#messages">Всплывающие сообщения</a></li>
+      <li><a href="#flows">Порядок действий</a></li>
+      <li><a href="#shots">Скриншоты</a></li>
+      <li><a href="#admin">Администратор</a></li>
+      <li><a href="#user">Пользователь</a></li>
+      <li><a href="#contacts">Контакты</a></li>
+    </ul>
+  </nav>
+
+  <main>
+
+    <section id="main">
+      <h2>Главное окно</h2>
+      <p><span class="tag">Окно</span> Заголовок: <strong>PoverkiVSE</strong>. Слева — журнал (таблица), справа — панель «Действия» (если не скрыта).</p>
+
+      <h3>Фильтры (вверху над таблицей)</h3>
+      <dl class="btn-list">
+        <dt>Тип</dt>
+        <dd>Все · Алкометры · Тонометры — отбор строк по типу прибора.</dd>
+        <dt>Статус</dt>
+        <dd>Все · цветовые статусы срока поверки — по вычисленному статусу «светофора».</dd>
+        <dt>Местонахождение (склад/вагон)</dt>
+        <dd>Список уникальных мест из базы + «Все».</dd>
+        <dt>Ответственный</dt>
+        <dd>ФИО из журнала + «Все».</dd>
+      </dl>
+      <p class="muted">При смене любого фильтра таблица обновляется автоматически.</p>
+
+      <h3>Таблица журнала</h3>
+      <ul>
+        <li>Столбцы: порядковый №, место, наименование, инв. №, тип, дата окончания поверки, напоминания по срокам, статус, примечание (и др. по версии).</li>
+        <li>Клик по заголовку столбца (нижняя строка заголовков) — сортировка; повторный клик — смена направления.</li>
+        <li><strong>Двойной щелчок</strong> по ячейке открывает <strong>карточку прибора</strong>, кроме столбцов: № п/п, место, дата окончания, колонки напоминаний (чтобы не открывать карточку при правке сроков в этих колонках).</li>
+        <li>Выделение строк: одиночное или несколько (<span class="kbd">Ctrl</span>/<span class="kbd">Shift</span>).</li>
+        <li><span class="kbd">Delete</span> — удаление выбранных приборов (с подтверждением).</li>
+        <li>Правый клик по таблице — меню «Удалить прибор…» / «Удалить выбранные (N)…».</li>
+      </ul>
+
+      <figure class="shot">
+        <img src="screenshots/01-main-window.png" alt="Главное окно PoverkiVSE: фильтры и таблица журнала">
+        <figcaption>Главное окно: фильтры (тип, статус, место, ответственный) и таблица приборов со «светофором» сроков поверки.</figcaption>
+      </figure>
+    </section>
+
+    <section id="panel">
+      <h2>Панель «Действия»</h2>
+      <p><span class="tag">Заголовок панели</span> Подпись «Действия». Кнопки в углу:</p>
+      <ul>
+        <li><strong>⧉</strong> — открепить панель в отдельное плавающее окно (там же доступны все кнопки + «Прикрепить» для возврата).</li>
+        <li><strong>◀</strong> — скрыть панель; слева появляется узкая кнопка <strong>▶</strong> для показа снова.</li>
+      </ul>
+
+      <h3>Строка поиска и кнопки навигации</h3>
+      <dl class="btn-list">
+        <dt>Поле «Текст для поиска по БД…»</dt>
+        <dd>Поиск подстроки по всем отображаемым полям прибора (без учёта регистра).</dd>
+        <dt>Найти</dt>
+        <dd>Перейти к первому совпадению; подсветка строки.</dd>
+        <dt>Далее / Назад</dt>
+        <dd>Следующее / предыдущее совпадение по списку найденных.</dd>
+      </dl>
+
+      <h3>Кнопки команд (сверху вниз)</h3>
+      <dl class="btn-list">
+        <dt>➕ Добавить прибор</dt>
+        <dd>Открывает диалог ввода нового прибора и опционально первой поверки.</dd>
+        <dt>🔔 Уведомления</dt>
+        <dd>Отправка утренней сводки в MAX (бот). Перед отправкой — вопрос подтверждения; после — отчёт об отправке.</dd>
+        <dt>📥 Экспорт в Excel</dt>
+        <dd>Диалог сохранения файла; в файл попадают строки с учётом текущих фильтров.</dd>
+        <dt>📥 Импорт из Excel</dt>
+        <dd>Мастер: выбор файла → анализ → разрешение конфликтов → импорт.</dd>
+        <dt>👤 Ответственные</dt>
+        <dd>Справочник ответственных и привязка к MAX (user_id).</dd>
+        <dt>📊 Статистика</dt>
+        <dd>Окно со сводкой по статусам и разбивкой по типам приборов.</dd>
+        <dt>📅 Яндекс.Календарь</dt>
+        <dd>Настройка CalDAV Яндекс: логин, пароль приложения, URL, синхронизация событий сроков поверки.</dd>
+        <dt>📅 Mail.ru Календарь</dt>
+        <dd>То же для Mail.ru.</dd>
+        <dt>📨 Email-уведомления</dt>
+        <dd>SMTP, тест письма, рассылка сводок на email.</dd>
+        <dt>🗑 Очистить базу данных…</dt>
+        <dd>Удаление всех приборов, поверок, лога уведомлений и каталогов документов; два подтверждения.</dd>
+        <dt>❓ Справка</dt>
+        <dd>Открывает эту страницу в браузере по умолчанию.</dd>
+      </dl>
+      <p class="muted">Внизу панели — счётчик «Всего / в норме / скоро / просрочено» и номер версии интерфейса.</p>
+
+      <figure class="shot">
+        <img src="screenshots/02-side-panel.png" alt="Панель Действия со списком кнопок">
+        <figcaption>Панель «Действия»: поиск, команды (добавить, уведомления, экспорт/импорт, ответственные, статистика, календари, email, очистка БД, справка), счётчик записей.</figcaption>
+      </figure>
+    </section>
+
+    <section id="dialogs">
+      <h2>Диалоговые окна — кнопки и назначение</h2>
+
+      <h3>Добавить новый прибор</h3>
+      <ul>
+        <li>Поля: тип (Алкометры / Тонометры), инв. № <em>(обязателен)</em>, место, ответственный, при необходимости даты поверки и окончания.</li>
+        <li><strong>➕ Добавить</strong> — проверка и запись в БД.</li>
+        <li><strong>Отмена</strong> — закрытие без сохранения.</li>
+      </ul>
+      <figure class="shot">
+        <img src="screenshots/03-add-device.png" alt="Диалог Добавить новый прибор">
+        <figcaption>Диалог «Добавить новый прибор»: тип, инв. №, место, ответственный, даты поверки; кнопки «Добавить» и «Отмена».</figcaption>
+      </figure>
+
+      <h3>Карточка прибора</h3>
+      <ul>
+        <li>Редактирование полей прибора, дат поверки/окончания; блок «Статус» — только отображение.</li>
+        <li>Таблица «История поверок» — просмотр записей.</li>
+        <li>Блок «Документы» — см. ниже.</li>
+        <li><strong>🗑 Удалить</strong> — удаление прибора с подтверждением (необратимо).</li>
+        <li><strong>📋 Копировать</strong> — запрос нового инвентарного номера; создаётся копия прибора.</li>
+        <li><strong>💾 Сохранить</strong> — сохранить изменения; при смене даты окончания добавляется запись в историю поверок.</li>
+        <li><strong>Отмена</strong> — выход без сохранения.</li>
+      </ul>
+      <p class="muted">При сохранении может выполняться фоновая синхронизация с CalDAV (если настроено).</p>
+      <figure class="shot">
+        <img src="screenshots/04-device-card.png" alt="Карточка прибора с полями и историей поверок">
+        <figcaption>Карточка прибора: поля данных, статус, история поверок, блок документов, кнопки «Удалить», «Копировать», «Сохранить».</figcaption>
+      </figure>
+
+      <h3>Документы в карточке прибора</h3>
+      <ul>
+        <li><strong>📎 Прикрепить</strong> — выбор файлов (PDF, изображения и т.д.), копирование в каталог <code>documents/&lt;id прибора&gt;</code>.</li>
+        <li><strong>🔍 Открыть</strong> — открыть выбранный в списке файл в программе по умолчанию.</li>
+        <li><strong>🗑 Удалить</strong> — удаление записи и файла с диска (подтверждение).</li>
+        <li>Двойной щелчок по строке списка — то же, что «Открыть».</li>
+      </ul>
+
+      <h3>Импорт из Excel</h3>
+      <ul>
+        <li><strong>📂 Выбрать файл</strong> — журнал в формате с листами «Алкометры» и «Тонометры».</li>
+        <li><strong>🔍 Анализировать</strong> — разбор файла и сопоставление с базой.</li>
+        <li>Для конфликтов — выбор действия по каждой строке (обновить из Excel / пропустить и т.п., как в мастере).</li>
+        <li><strong>✅ Выполнить импорт</strong> — применение; затем отчёт «Добавлено / Обновлено / Пропущено».</li>
+        <li><strong>Отмена</strong> — выход.</li>
+      </ul>
+      <figure class="shot">
+        <img src="screenshots/05-import-excel.png" alt="Окно импорта из Excel">
+        <figcaption>Импорт из Excel: выбор файла, анализ, таблица конфликтов и кнопка «Выполнить импорт».</figcaption>
+      </figure>
+
+      <h3>Яндекс.Календарь / Mail.ru Календарь (CalDAV)</h3>
+      <ul>
+        <li>Поля: логин, пароль приложения, CalDAV URL, имя календаря (можно пусто — первый календарь).</li>
+        <li><strong>🔌 Проверить соединение</strong> — тест доступа к серверу (настройки предварительно сохраняются).</li>
+        <li><strong>💾 Сохранить</strong> — запись учётных данных в локальные настройки.</li>
+        <li><strong>🔄 Синхронизировать все приборы в календарь</strong> — массовая выгрузка/обновление событий; по завершении — сообщение или предупреждение при ошибках.</li>
+        <li><strong>Закрыть</strong> — закрыть окно.</li>
+      </ul>
+      <figure class="shot">
+        <img src="screenshots/06-caldav.png" alt="Окно настройки CalDAV Яндекс">
+        <figcaption>Пример окна авторизации CalDAV (Яндекс.Календарь): поля логина, пароля приложения, URL, подсказки и кнопки проверки и синхронизации.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="screenshots/10-caldav-mailru.png" alt="Окно настройки Mail.ru Календарь">
+        <figcaption>Окно «Авторизация — Mail.ru Календарь»: тот же набор полей и кнопок; жёлтая подсказка про пароль для внешних приложений Mail.ru.</figcaption>
+      </figure>
+
+      <h3>Email-уведомления (SMTP)</h3>
+      <ul>
+        <li><strong>Провайдер</strong> — выпадающий список пресетов (Яндекс, Mail.ru и др.) для подстановки host/порта.</li>
+        <li>Поля: SMTP host, порт, SSL/STARTTLS, логин, пароль приложения, «От», email администратора (сюда уходит ежедневная сводка).</li>
+        <li><strong>💾 Сохранить SMTP</strong> — сохранить параметры сервера.</li>
+        <li><strong>🔌 Тестовое письмо</strong> — отправка теста на адрес из поля «Отправить тест на:» или на email администратора.</li>
+        <li>Таблица <strong>ФИО / Email</strong> — почта ответственных для справки (сводка на адреса из таблицы не дублируется автоматически — см. подпись в окне).</li>
+        <li><strong>💾 Сохранить email в таблице</strong> — записать email из таблицы в БД.</li>
+        <li><strong>📤 Отправить сводку администратору (фон)</strong> — фоновая отправка сводки на email администратора.</li>
+        <li><strong>Закрыть</strong>.</li>
+      </ul>
+      <figure class="shot">
+        <img src="screenshots/07-email.png" alt="Окно Email SMTP">
+        <figcaption>Настройки SMTP: провайдер, host/порт, тестовое письмо, таблица email ответственных, отправка сводки администратору.</figcaption>
+      </figure>
+
+      <h3>Ответственные (MAX user_id)</h3>
+      <ul>
+        <li>Таблица: <strong>ФИО</strong>, <strong>MAX user_id</strong> (число для бота), служебный столбец id в БД скрыт.</li>
+        <li>Редактирование ячеек — двойной щелчок; новая строка — <strong>➕ Добавить ответственного</strong>.</li>
+        <li><strong>Обновить из БД</strong> — перечитать данные с сервера.</li>
+        <li><strong>Сохранить</strong> — запись справочника; сообщение «Справочник ответственных сохранён».</li>
+        <li><strong>Закрыть</strong>.</li>
+      </ul>
+      <figure class="shot">
+        <img src="screenshots/08-responsible.png" alt="Диалог Ответственные MAX user_id">
+        <figcaption>Окно «Ответственные»: таблица ФИО и MAX user_id, кнопки «Обновить из БД», «Добавить ответственного», «Сохранить», «Закрыть».</figcaption>
+      </figure>
+
+      <h3>Статистика</h3>
+      <p>Только просмотр: карточки со счётчиками и таблица по типам приборов. Закрытие — стандартная кнопка окна.</p>
+      <figure class="shot">
+        <img src="screenshots/09-statistics.png" alt="Окно Статистика со сводкой">
+        <figcaption>«Статистика»: карточки «Всего / В норме / Скоро срок / Просрочено / Нет данных» и таблица «По типам приборов» (Алкометры, Тонометры).</figcaption>
+      </figure>
+
+      <h3>Диалог «Новая поверка» (в коде приложения)</h3>
+      <p class="muted">В текущей версии основной сценарий — ввод дат в <strong>карточке прибора</strong> или правка в таблице. Отдельное окно «Новая поверка» с полями даты и комментария может использоваться в других сценариях; кнопки: стандартные <strong>OK</strong> / <strong>Отмена</strong>.</p>
+    </section>
+
+    <section id="messages">
+      <h2>Всплывающие сообщения (тексты из программы)</h2>
+      <p class="muted">Ниже — типовые окна с кнопками «Да/Нет», «ОК» и т.д. Формулировки могут слегка отличаться в новых версиях.</p>
+
+      <figure class="shot">
+        <img src="screenshots/11-dialog-clear-database.png" alt="Диалог подтверждения очистки базы данных">
+        <figcaption>Пример первого вопроса при «Очистить базу данных»: что будет удалено и что сохранится (CalDAV, email, справочники).</figcaption>
+      </figure>
+
+      <div class="table-scroll" role="region" aria-label="Таблица всплывающих сообщений" tabindex="0">
+      <table class="msg">
+        <thead>
+          <tr><th>Заголовок / контекст</th><th>Текст / смысл</th><th>Действие пользователя</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Справка — файл не найден</td>
+            <td>Показан путь к <code>help/index.html</code></td>
+            <td>ОК — проверить установку папки <code>help</code></td>
+          </tr>
+          <tr>
+            <td>Справка — не удалось открыть</td>
+            <td>Браузер не открыл ссылку</td>
+            <td>ОК</td>
+          </tr>
+          <tr>
+            <td>Очистка базы данных (1-й вопрос)</td>
+            <td>Предупреждение о удалении приборов, поверок, лога, файлов в <code>documents</code>; настройки сохраняются</td>
+            <td>Да / Нет</td>
+          </tr>
+          <tr>
+            <td>Подтверждение (2-й вопрос)</td>
+            <td>«Это действие нельзя отменить…»</td>
+            <td>Да / Нет</td>
+          </tr>
+          <tr>
+            <td>Готово</td>
+            <td>«База данных очищена.»</td>
+            <td>ОК</td>
+          </tr>
+          <tr>
+            <td>Отправить уведомления</td>
+            <td>Отправить в MAX утреннюю сводную ведомость…</td>
+            <td>Да / Нет</td>
+          </tr>
+          <tr>
+            <td>Готово (уведомления)</td>
+            <td>Счётчики: отправлено / пропущено сегодня / ошибок</td>
+            <td>ОК</td>
+          </tr>
+          <tr>
+            <td>Ошибка</td>
+            <td>Текст исключения при сбое отправки</td>
+            <td>ОК</td>
+          </tr>
+          <tr>
+            <td>Удаление (таблица)</td>
+            <td>Нет выбранных строк: «Выберите одну или несколько строк…»</td>
+            <td>ОК</td>
+          </tr>
+          <tr>
+            <td>Удаление</td>
+            <td>Подтверждение удаления одного или нескольких приборов</td>
+            <td>Да / Нет</td>
+          </tr>
+          <tr>
+            <td>Экспорт завершён</td>
+            <td>Путь к файлу и число экспортированных строк</td>
+            <td>ОК</td>
+          </tr>
+          <tr>
+            <td>Добавить прибор — Ошибка</td>
+            <td>«Инвентарный номер обязателен…»</td>
+            <td>ОК</td>
+          </tr>
+          <tr>
+            <td>Удаление прибора (карточка)</td>
+            <td>«Удалить прибор и всю историю поверок и документы?…»</td>
+            <td>Да / Нет</td>
+          </tr>
+          <tr>
+            <td>Копия создана</td>
+            <td>Новый ID прибора</td>
+            <td>ОК</td>
+          </tr>
+          <tr>
+            <td>Ошибка копирования</td>
+            <td>Текст ошибки</td>
+            <td>ОК</td>
+          </tr>
+          <tr>
+            <td>Импорт — Ошибка чтения файла</td>
+            <td>Описание ошибки</td>
+            <td>ОК</td>
+          </tr>
+          <tr>
+            <td>Импорт завершён</td>
+            <td>Добавлено / Обновлено / Пропущено</td>
+            <td>ОК</td>
+          </tr>
+          <tr>
+            <td>Email — Тест</td>
+            <td>Заголовок «Тест»: «Укажите email для теста или fallback администратора» (если не заполнен адрес)</td>
+            <td>ОК</td>
+          </tr>
+          <tr>
+            <td>Email-сводка</td>
+            <td>Результат фоновой отправки</td>
+            <td>ОК</td>
+          </tr>
+          <tr>
+            <td>Синхронизация CalDAV</td>
+            <td>Успех или предупреждение с числом ошибок</td>
+            <td>ОК</td>
+          </tr>
+          <tr>
+            <td>Ответственные — Готово</td>
+            <td>Справочник сохранён</td>
+            <td>ОК</td>
+          </tr>
+          <tr>
+            <td>Ответственные — Ошибка</td>
+            <td>Некорректный MAX user_id (ожидается число)</td>
+            <td>ОК</td>
+          </tr>
+          <tr>
+            <td>Ошибка БД</td>
+            <td>Текст ошибки при сохранении ответственных</td>
+            <td>ОК</td>
+          </tr>
+          <tr>
+            <td>Документы — Ошибка прикрепления</td>
+            <td>Текст ошибки</td>
+            <td>ОК</td>
+          </tr>
+          <tr>
+            <td>Файл не найден</td>
+            <td>Файл на диске отсутствует</td>
+            <td>ОК</td>
+          </tr>
+          <tr>
+            <td>Удалить документ?</td>
+            <td>«Файл будет удалён с диска…»</td>
+            <td>Да / Нет</td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+
+    <section id="flows">
+      <h2>Порядок действий (сценарии со стрелками)</h2>
+
+      <h3>Добавить прибор вручную</h3>
+      <div class="flow">
+        Панель «Действия» <span class="arr">→</span> <strong>➕ Добавить прибор</strong>
+        <span class="arr">→</span> заполнить поля <span class="arr">→</span> <strong>➕ Добавить</strong>
+        <span class="arr">→</span> строка появляется в журнале
+      </div>
+
+      <h3>Открыть и изменить прибор</h3>
+      <div class="flow">
+        Таблица <span class="arr">→</span> <strong>двойной щелчок</strong> по ячейке (кроме №, места, даты окончания, напоминаний)
+        <span class="arr">→</span> карточка прибора <span class="arr">→</span> правки <span class="arr">→</span> <strong>💾 Сохранить</strong>
+      </div>
+
+      <h3>Поиск по журналу</h3>
+      <div class="flow">
+        Ввести текст в поиск <span class="arr">→</span> <strong>Найти</strong>
+        <span class="arr">→</span> при необходимости <strong>Далее</strong> / <strong>Назад</strong>
+      </div>
+
+      <h3>Экспорт в Excel</h3>
+      <div class="flow">
+        Настроить фильтры <span class="arr">→</span> <strong>📥 Экспорт в Excel</strong>
+        <span class="arr">→</span> указать путь и имя файла <span class="arr">→</span> сохранить
+        <span class="arr">→</span> сообщение «Экспорт завершён»
+      </div>
+
+      <h3>Импорт из Excel</h3>
+      <div class="flow">
+        <strong>📥 Импорт из Excel</strong> <span class="arr">→</span> <strong>📂 Выбрать файл</strong>
+        <span class="arr">→</span> <strong>🔍 Анализировать</strong>
+        <span class="arr">→</span> разрешить конфликты в таблице
+        <span class="arr">→</span> <strong>✅ Выполнить импорт</strong>
+        <span class="arr">→</span> отчёт «Импорт завершён»
+      </div>
+
+      <h3>Уведомления в MAX</h3>
+      <div class="flow">
+        <strong>🔔 Уведомления</strong> <span class="arr">→</span> подтвердить вопрос
+        <span class="arr">→</span> ожидание <span class="arr">→</span> окно «Готово» со статистикой
+      </div>
+
+      <h3>Подключить календарь (Яндекс или Mail.ru)</h3>
+      <div class="flow">
+        <strong>📅 … Календарь</strong> <span class="arr">→</span> ввести логин и пароль приложения
+        <span class="arr">→</span> при необходимости <strong>💾 Сохранить</strong>
+        <span class="arr">→</span> <strong>🔌 Проверить соединение</strong>
+        <span class="arr">→</span> <strong>🔄 Синхронизировать все приборы…</strong>
+        <span class="arr">→</span> дождаться сообщения о результате
+      </div>
+
+      <h3>Полная очистка базы (только администратор)</h3>
+      <div class="flow">
+        <strong>🗑 Очистить базу данных…</strong> <span class="arr">→</span> <strong>Да</strong> (1)
+        <span class="arr">→</span> <strong>Да</strong> (2) <span class="arr">→</span> «База данных очищена»
+      </div>
+
+      <h3>Удалить приборы из таблицы</h3>
+      <div class="flow">
+        Выделить строки <span class="arr">→</span> <span class="kbd">Delete</span> или правый клик <strong>Удалить…</strong>
+        <span class="arr">→</span> <strong>Да</strong> <span class="arr">→</span> таблица обновляется
+      </div>
+
+      <h3>Прикрепить документ к прибору</h3>
+      <div class="flow">
+        Открыть карточку прибора <span class="arr">→</span> блок «Документы»
+        <span class="arr">→</span> <strong>📎 Прикрепить</strong>
+        <span class="arr">→</span> выбрать файлы <span class="arr">→</span> список обновится
+      </div>
+
+      <h3>Открыть справку в браузере</h3>
+      <div class="flow">
+        <strong>❓ Справка</strong> <span class="arr">→</span> открывается этот файл (<code>index.html</code>) в браузере по умолчанию
+      </div>
+    </section>
+
+    <section id="shots">
+      <h2>Скриншоты — список файлов</h2>
+      <p class="muted">Все изображения лежат в папке <code>help/screenshots/</code>. Ниже — дубли для быстрого просмотра справки в браузере.</p>
+      <ul>
+        <li><code>01-main-window.png</code> — главное окно</li>
+        <li><code>02-side-panel.png</code> — панель «Действия»</li>
+        <li><code>03-add-device.png</code> — добавление прибора</li>
+        <li><code>04-device-card.png</code> — карточка прибора</li>
+        <li><code>05-import-excel.png</code> — импорт Excel</li>
+        <li><code>06-caldav.png</code> — CalDAV (пример: Яндекс)</li>
+        <li><code>07-email.png</code> — email SMTP</li>
+        <li><code>08-responsible.png</code> — ответственные (MAX)</li>
+        <li><code>09-statistics.png</code> — статистика</li>
+        <li><code>10-caldav-mailru.png</code> — CalDAV Mail.ru</li>
+        <li><code>11-dialog-clear-database.png</code> — диалог очистки БД</li>
+        <li><code>12-help-browser.png</code> — справка в браузере (фрагмент страницы)</li>
+        <li><code>13-help-browser-nav.png</code> — оглавление справки в браузере</li>
+      </ul>
+      <figure class="shot">
+        <img src="screenshots/12-help-browser.png" alt="Справка PoverkiVSE в браузере">
+        <figcaption>Справка открывается через кнопку «❓ Справка»: страница <code>index.html</code> в браузере по умолчанию.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="screenshots/13-help-browser-nav.png" alt="Навигация по справке">
+        <figcaption>Шапка и оглавление справки (якорные ссылки по разделам).</figcaption>
+      </figure>
+    </section>
+
+    <section id="admin">
+      <h2>Раздел: администратор</h2>
+      <ul>
+        <li>Контроль каталогов <code>data</code> и <code>documents</code> рядом с программой, резервное копирование.</li>
+        <li>Настройка MAX-бота, ответственных, SMTP, планировщика Windows для <code>notify_daily</code> (см. документацию в проекте).</li>
+        <li>CalDAV: выдача паролей приложений у почтовых провайдеров.</li>
+        <li>Операция «Очистить базу данных» — только при полной перезагрузке учёта.</li>
+      </ul>
+    </section>
+
+    <section id="user">
+      <h2>Раздел: пользователь</h2>
+      <ul>
+        <li>Работа с фильтрами, поиском, карточкой прибора, экспортом при отсутствии прав на «опасные» настройки (по решению организации).</li>
+        <li>Удаление строк и очистка базы при необходимости делегируются администратору.</li>
+      </ul>
+    </section>
+
+  </main>
+
+  <div class="org-footer" id="contacts">
+    <div class="org-card">
+      <strong>Контакты</strong><br>
+      Email:
+      <a href="mailto:89615516464@mail.ru">89615516464@mail.ru</a><br>
+      тел.: <a href="tel:+79615516464">+7&nbsp;(961)&nbsp;551-64-64</a>
+    </div>
+  </div>
+
+  <footer>
+    PoverkiVSE · справка обновляется вместе с версией программы · Служба скорой медицинской помощи
+  </footer>
+</body>
+</html>

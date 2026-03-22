@@ -127,7 +127,7 @@ def check_and_notify(dry_run: bool = False) -> dict:
         return stats
 
     today_str = date.today().strftime("%d.%m.%Y")
-    footer = f"Оркестратор Поверки | {today_str}"
+    footer = f"PoverkiVSE | {today_str}"
 
     body_lines = base_plain.split("\n")
     header = (body_lines[0] + "\n━━━━━━━━━━━━━━━━━━") if body_lines else "📊 Сводка"

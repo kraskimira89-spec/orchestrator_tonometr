@@ -6,8 +6,17 @@ PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-from PyQt6.QtCore import Qt, QTimer, QSize
-from PyQt6.QtGui import QColor, QFont, QPainter, QPen
+from PyQt6.QtCore import QEvent, Qt, QTimer, QSize, QUrl
+from PyQt6.QtGui import (
+    QAction,
+    QColor,
+    QDesktopServices,
+    QFont,
+    QKeySequence,
+    QPainter,
+    QPen,
+    QShortcut,
+)
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -18,6 +27,7 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QScrollArea,
     QStyledItemDelegate,
@@ -29,8 +39,10 @@ from PyQt6.QtWidgets import (
 )
 
 from core.journal_dates import journal_reminder_dates
+from core.paths import get_help_index_path
 
 from db.database import (
+    delete_device,
     get_all_devices,
     get_connection,
     get_location_choices,
@@ -39,6 +51,7 @@ from db.database import (
     update_device_note,
     update_responsible_fio,
 )
+from core.reset_db import reset_db
 from ui.verification_dialog import VerificationDialog
 from ui.device_card import DeviceCardDialog
 from ui.add_device_dialog import AddDeviceDialog
@@ -150,7 +163,7 @@ DATA_ROW_HEIGHT = 26
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Поверки. Алкометры и Тонометры")
+        self.setWindowTitle("PoverkiVSE")
         self.resize(1300, 750)
         self.setMinimumSize(0, 0)
 
@@ -236,7 +249,7 @@ class MainWindow(QMainWindow):
         filters_scroll.setMaximumHeight(44)
         filters_scroll.setWidget(filters_host)
         filters_scroll.setMinimumSize(0, 0)
-        left_layout.addWidget(filters_scroll)
+        self.filters_scroll = filters_scroll
 
         # Верхняя таблица — только 2 строки заголовка (не прокручивается по вертикали)
         self.table_header = _UnconstrainedTable()
@@ -271,7 +284,7 @@ class MainWindow(QMainWindow):
         self.table = _UnconstrainedTable()
         self.table.setMinimumSize(0, 0)
         self.table.setSizePolicy(
-            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed
         )
         self._date_delegate = DateDelegate()
         self._location_delegate = LocationComboDelegate(self.table)
@@ -288,7 +301,14 @@ class MainWindow(QMainWindow):
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(DATA_ROW_HEIGHT)
         self.table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._on_table_context_menu)
+        self._shortcut_delete = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.table)
+        self._shortcut_delete.activated.connect(self._delete_selected_devices)
         self.table.setAlternatingRowColors(False)
         self.table.cellDoubleClicked.connect(self.on_cell_double_clicked)
         self.table.itemChanged.connect(self.on_item_changed)
@@ -300,19 +320,24 @@ class MainWindow(QMainWindow):
             self._on_header_column_resized
         )
 
-        self._sync_h_scroll_lock = False
-        self.table.horizontalScrollBar().valueChanged.connect(self._sync_h_scroll_to_header)
-        self.table_header.horizontalScrollBar().valueChanged.connect(self._sync_h_scroll_to_data)
-        self.table.verticalScrollBar().rangeChanged.connect(
-            lambda *_: self._sync_header_width_to_table_viewport()
-        )
+        # Левая колонка: фильтры + заголовок таблицы + данные — одна прокрутка (вертикаль и горизонталь)
+        self._left_scroll = QScrollArea()
+        self._left_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._left_scroll.setWidgetResizable(False)
+        self._left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._left_content = QWidget()
+        self._left_content.setMinimumSize(0, 0)
+        _left_v = QVBoxLayout(self._left_content)
+        _left_v.setContentsMargins(0, 0, 0, 0)
+        _left_v.setSpacing(6)
+        _left_v.addWidget(self.filters_scroll)
+        _left_v.addWidget(self.table_header)
+        _left_v.addWidget(self.table)
+        self._left_scroll.setWidget(self._left_content)
+        self._left_scroll.viewport().installEventFilter(self)
 
-        left_layout.addWidget(
-            self.table_header,
-            0,
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
-        )
-        left_layout.addWidget(self.table, stretch=1)
+        left_layout.addWidget(self._left_scroll, stretch=1)
 
         main_layout.addWidget(left_widget, stretch=1)
 
@@ -327,6 +352,8 @@ class MainWindow(QMainWindow):
         self.side_panel.sig_caldav_yandex.connect(self.on_caldav_yandex)
         self.side_panel.sig_caldav_mailru.connect(self.on_caldav_mailru)
         self.side_panel.sig_email_settings.connect(self.on_email_settings)
+        self.side_panel.sig_clear_database.connect(self.on_clear_database)
+        self.side_panel.sig_help.connect(self.on_open_help)
         self.side_panel.search_box.textChanged.connect(self._on_search_text_changed)
         self.side_panel.search_box.returnPressed.connect(self._search_nav_find_first)
         self.side_panel.sig_search_find.connect(self._search_nav_find_first)
@@ -370,6 +397,63 @@ class MainWindow(QMainWindow):
             return int(v)
         except (TypeError, ValueError):
             return None
+
+    def _device_ids_from_selection(self) -> list[int]:
+        rows = {idx.row() for idx in self.table.selectedIndexes()}
+        ids: list[int] = []
+        for r in sorted(rows):
+            did = self._device_id_from_row(r)
+            if did is not None:
+                ids.append(did)
+        return ids
+
+    def _on_table_context_menu(self, pos):
+        ids = self._device_ids_from_selection()
+        menu = QMenu(self.table)
+        if len(ids) == 1:
+            act = QAction("Удалить прибор…", self.table)
+        elif len(ids) > 1:
+            act = QAction(f"Удалить выбранные ({len(ids)})…", self.table)
+        else:
+            act = QAction("Удалить выбранные…", self.table)
+            act.setEnabled(False)
+        act.triggered.connect(self._delete_selected_devices)
+        menu.addAction(act)
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def _delete_selected_devices(self):
+        ids = self._device_ids_from_selection()
+        if not ids:
+            QMessageBox.information(
+                self,
+                "Удаление",
+                "Выберите одну или несколько строк в таблице.",
+            )
+            return
+        n = len(ids)
+        if n == 1:
+            msg = "Удалить этот прибор из базы? Связанные поверки и документы будут удалены."
+        else:
+            msg = (
+                f"Удалить {n} приборов из базы? Связанные поверки и документы будут удалены."
+            )
+        if (
+            QMessageBox.question(
+                self,
+                "Удаление",
+                msg,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            != QMessageBox.StandardButton.Yes
+        ):
+            return
+        for did in ids:
+            delete_device(did)
+        self.refresh_table()
+        self.fill_filter_values()
+        self._rebuild_search_matches()
+        self._update_search_nav_buttons()
 
     def _device_full_by_id(self, device_id: int):
         for d in get_all_devices():
@@ -514,6 +598,7 @@ class MainWindow(QMainWindow):
         self._column_sync_lock = True
         self.table_header.setColumnWidth(logical_index, new_size)
         self._column_sync_lock = False
+        QTimer.singleShot(0, self._update_left_scroll_geometry)
 
     def _on_header_column_resized(self, logical_index: int, old_size: int, new_size: int):
         if self._column_sync_lock:
@@ -521,41 +606,47 @@ class MainWindow(QMainWindow):
         self._column_sync_lock = True
         self.table.setColumnWidth(logical_index, new_size)
         self._column_sync_lock = False
-
-    def _sync_h_scroll_to_header(self, value: int):
-        if self._sync_h_scroll_lock:
-            return
-        self._sync_h_scroll_lock = True
-        sb = self.table_header.horizontalScrollBar()
-        sb.blockSignals(True)
-        sb.setValue(value)
-        sb.blockSignals(False)
-        self._sync_h_scroll_lock = False
-
-    def _sync_h_scroll_to_data(self, value: int):
-        if self._sync_h_scroll_lock:
-            return
-        self._sync_h_scroll_lock = True
-        sb = self.table.horizontalScrollBar()
-        sb.blockSignals(True)
-        sb.setValue(value)
-        sb.blockSignals(False)
-        self._sync_h_scroll_lock = False
+        QTimer.singleShot(0, self._update_left_scroll_geometry)
 
     def _copy_column_widths_to_header(self):
         for c in range(len(COLUMNS)):
             self.table_header.setColumnWidth(c, self.table.columnWidth(c))
 
-    def _sync_header_width_to_table_viewport(self):
-        """Ширина области заголовка = viewport данных (минус вертикальный скролл), иначе расходится горизонтальный скролл."""
-        w = self.table.viewport().width()
-        if w > 0:
-            self.table_header.setFixedWidth(w)
+    def _update_left_scroll_geometry(self) -> None:
+        """Размер содержимого левой колонки: фильтры + заголовок + все строки; прокрутка у области _left_scroll."""
+        if not hasattr(self, "_left_scroll"):
+            return
+        vp = self._left_scroll.viewport()
+        if not vp or vp.width() < 1:
+            return
+        vw = max(vp.width(), 1)
+        tw = sum(max(self.table.columnWidth(c), 0) for c in range(len(COLUMNS)))
+        inner_w = max(tw, vw)
+        n = self.table.rowCount()
+        body_h = max(n * DATA_ROW_HEIGHT, 50)
+        fh = max(
+            int(self.filters_scroll.sizeHint().height()),
+            int(self.filters_scroll.minimumHeight()),
+        )
+        inner_h = fh + TABLE_HEADER_HEIGHT + body_h
+        self._left_content.setFixedSize(inner_w, inner_h)
+        self.filters_scroll.setFixedWidth(inner_w)
+        self.table_header.setFixedWidth(inner_w)
+        self.table.setFixedWidth(inner_w)
+        self.table.setFixedHeight(body_h)
+
+    def eventFilter(self, obj, event):
+        if (
+            hasattr(self, "_left_scroll")
+            and obj is self._left_scroll.viewport()
+            and event.type() == QEvent.Type.Resize
+        ):
+            QTimer.singleShot(0, self._update_left_scroll_geometry)
+        return super().eventFilter(obj, event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        # После завершения кадра ресайза: синхрон в resizeEvent давал гонку с layout и блокировал окно
-        QTimer.singleShot(0, self._sync_header_width_to_table_viewport)
+        QTimer.singleShot(0, self._update_left_scroll_geometry)
 
     # ── заполнение фильтров ───────────────────────────────────────────────
     def fill_filter_values(self):
@@ -765,7 +856,7 @@ class MainWindow(QMainWindow):
         self.table_header.blockSignals(False)
         self.table.blockSignals(False)
 
-        QTimer.singleShot(0, self._sync_header_width_to_table_viewport)
+        QTimer.singleShot(0, self._update_left_scroll_geometry)
 
     # ── клик по строке заголовков (верхняя таблица) ─────────────────────────
     def on_header_cell_clicked(self, row, col):
@@ -896,6 +987,56 @@ class MainWindow(QMainWindow):
 
     def on_email_settings(self):
         EmailSettingsDialog(self).exec()
+
+    def on_open_help(self):
+        path = get_help_index_path()
+        if not os.path.isfile(path):
+            QMessageBox.warning(
+                self,
+                "Справка",
+                "Файл справки не найден.\n"
+                f"Ожидался:\n{path}",
+            )
+            return
+        url = QUrl.fromLocalFile(os.path.normpath(path))
+        if not QDesktopServices.openUrl(url):
+            QMessageBox.warning(
+                self,
+                "Справка",
+                "Не удалось открыть справку в браузере.",
+            )
+
+    def on_clear_database(self):
+        reply = QMessageBox.question(
+            self,
+            "Очистка базы данных",
+            "Будут удалены все приборы, история поверок, лог уведомлений и файлы в папке documents.\n"
+            "Настройки (CalDAV, email) и справочники пользователей сохранятся.\n\n"
+            "Продолжить?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        second = QMessageBox.warning(
+            self,
+            "Подтверждение",
+            "Это действие нельзя отменить. Удалить все данные приборов?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if second != QMessageBox.StandardButton.Yes:
+            return
+        reset_db()
+        init_database()
+        self.side_panel.search_box.clear()
+        self._rebuild_search_matches()
+        self._search_match_index = -1
+        self._highlight_device_id = None
+        self.refresh_table()
+        self.fill_filter_values()
+        self._update_search_nav_buttons()
+        QMessageBox.information(self, "Готово", "База данных очищена.")
 
     def on_send_notifications(self):
         reply = QMessageBox.question(

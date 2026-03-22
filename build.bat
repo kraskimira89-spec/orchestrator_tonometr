@@ -1,21 +1,22 @@
 @echo off
 chcp 65001 > nul
 echo ====================================
-echo  Сборка OrchestratorTonometr.exe
+echo  Сборка PoverkiVSE.exe
 echo ====================================
 
 REM Очистка предыдущей сборки
 if exist dist rmdir /s /q dist
 if exist build rmdir /s /q build
-if exist OrchestratorTonometr.spec del OrchestratorTonometr.spec
+if exist PoverkiVSE.spec del PoverkiVSE.spec
 
 REM Сборка (без --collect-submodules openpyxl: иначе тянется openpyxl.utils.dataframe → pandas/torch, сборка очень долгая)
 pyinstaller ^
     --onefile ^
     --windowed ^
-    --name OrchestratorTonometr ^
+    --name PoverkiVSE ^
     --add-data "data;data" ^
     --add-data "documents;documents" ^
+    --add-data "help;help" ^
     --hidden-import caldav ^
     --hidden-import caldav.elements ^
     --hidden-import openpyxl ^
@@ -26,10 +27,10 @@ pyinstaller ^
     --collect-submodules caldav ^
     main.py
 
-if exist dist\OrchestratorTonometr.exe (
+if exist dist\PoverkiVSE.exe (
     echo.
     echo ====================================
-    echo  ГОТОВО: dist\OrchestratorTonometr.exe
+    echo  ГОТОВО: dist\PoverkiVSE.exe
     echo ====================================
 ) else (
     echo.

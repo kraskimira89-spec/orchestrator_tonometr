@@ -11,7 +11,7 @@ from core.notifier import send_message, check_and_notify
 
 chat_id = os.getenv("ADMIN_CHAT_ID")
 print(f"Отправляем тест на user_id={chat_id}...")
-ok = send_message(chat_id, "Оркестратор Поверки — подключён и работает!")
+ok = send_message(chat_id, "PoverkiVSE — подключён и работает!")
 print("Отправлено!" if ok else "Ошибка")
 
 print("\nПроверка приборов (dry_run)...")
