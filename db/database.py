@@ -204,7 +204,9 @@ def get_all_devices():
         SELECT
             d.id,
             d.type,
+            d.name,
             d.inventory_number,
+            d.serial_number,
             d.location,
             d.responsible_fio,
             v.expiry_date,

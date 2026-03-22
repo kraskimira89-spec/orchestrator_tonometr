@@ -81,12 +81,12 @@ class _FloatWindow(QWidget):
             "QPushButton:pressed { background: #C8C8C8; }"
         )
 
-        lbl = QLabel("Поиск по столбцу:")
+        lbl = QLabel("Поиск по инв., серийному № и наименованию:")
         lbl.setStyleSheet("border:none;")
         layout.addWidget(lbl)
 
         self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("Введите текст...")
+        self.search_box.setPlaceholderText("Инв., серийный № или наименование…")
         self.search_box.setStyleSheet("border: 1px solid #999; border-radius:3px; background:white;")
         self.search_box.textChanged.connect(panel.search_box.setText)
         panel.search_box.textChanged.connect(
@@ -263,12 +263,12 @@ class SidePanel(QWidget):
         layout.addWidget(sep0)
 
         # поиск
-        lbl_search = QLabel("Поиск по столбцу:")
+        lbl_search = QLabel("Поиск по инв., серийному № и наименованию:")
         lbl_search.setStyleSheet("background:transparent;")
         layout.addWidget(lbl_search)
 
         self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("Введите текст...")
+        self.search_box.setPlaceholderText("Инв., серийный № или наименование…")
         self.search_box.setStyleSheet(
             "border:1px solid #AAAAAA; border-radius:3px; "
             "background:white; padding:2px 4px;"

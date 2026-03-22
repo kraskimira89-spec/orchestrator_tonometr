@@ -52,17 +52,31 @@ class HeaderBorderDelegate(QStyledItemDelegate):
 COL_ID       = 0
 COL_TYPE     = 1
 COL_INV      = 2
-COL_LOCATION = 3
-COL_EXPIRY   = 4
-COL_STATUS   = 5
-COL_RESP     = 6
+COL_NAME     = 3
+COL_SERIAL   = 4
+COL_LOCATION = 5
+COL_EXPIRY   = 6
+COL_STATUS   = 7
+COL_RESP     = 8
 
-COLUMNS = ["ID", "Тип", "Инв. №", "Место", "Дата окончания", "Статус", "Ответственный"]
+COLUMNS = [
+    "ID",
+    "Тип",
+    "Инв. №",
+    "Наименование",
+    "Серийный №",
+    "Место",
+    "Дата окончания",
+    "Статус",
+    "Ответственный",
+]
 
 COL_FIELDS = {
     COL_ID:       "id",
     COL_TYPE:     "type",
     COL_INV:      "inventory_number",
+    COL_NAME:     "name",
+    COL_SERIAL:   "serial_number",
     COL_LOCATION: "location",
     COL_EXPIRY:   "expiry_date",
     COL_STATUS:   "status",
@@ -198,6 +212,15 @@ class MainWindow(QMainWindow):
                 return d
         return None
 
+    def _row_matches_inv_serial_search(self, row: dict, search_text: str) -> bool:
+        """Подстрока в инв. №, серийном № или наименовании (без учёта регистра)."""
+        if not search_text:
+            return True
+        inv = (row.get("inventory_number") or "").strip().lower()
+        ser = (row.get("serial_number") or "").strip().lower()
+        nam = (row.get("name") or "").strip().lower()
+        return search_text in inv or search_text in ser or search_text in nam
+
     # ── заполнение фильтров ───────────────────────────────────────────────
     def fill_filter_values(self):
         devices = get_all_devices()
@@ -239,8 +262,7 @@ class MainWindow(QMainWindow):
         status_filter = self._status_from_filter()
         loc_filter    = self.location_filter.currentText()
         resp_filter   = self.responsible_filter.currentText()
-        search_text   = self.side_panel.search_box.text().strip().lower()
-        current_col   = self.table.currentColumn()
+        search_text = self.side_panel.search_box.text().strip().lower()
 
         filtered = []
         for row in all_devices:
@@ -252,12 +274,8 @@ class MainWindow(QMainWindow):
                 continue
             if resp_filter != "Все" and row.get("responsible_fio") != resp_filter:
                 continue
-            if search_text and current_col not in (-1, 0, 1):
-                field = COL_FIELDS.get(current_col)
-                if field:
-                    val = row.get(field)
-                    if val is None or search_text not in str(val).lower():
-                        continue
+            if search_text and not self._row_matches_inv_serial_search(row, search_text):
+                continue
             filtered.append(row)
 
         # сортировка
@@ -318,6 +336,8 @@ class MainWindow(QMainWindow):
                 str(row.get("id") or ""),
                 row.get("type") or "",
                 row.get("inventory_number") or "",
+                row.get("name") or "",
+                row.get("serial_number") or "",
                 row.get("location") or "",
                 expiry,
                 STATUS_LABELS.get(status, "Нет данных"),
@@ -328,7 +348,7 @@ class MainWindow(QMainWindow):
 
             for c, val in enumerate(values):
                 cell = QTableWidgetItem(val)
-                if c == COL_LOCATION:
+                if c in (COL_NAME, COL_LOCATION):
                     cell.setTextAlignment(
                         Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
                     )
@@ -416,6 +436,11 @@ class MainWindow(QMainWindow):
         full = self._device_full_by_id(device_id)
         if full:
             device_data["verification_date"] = full.get("verification_date") or ""
+            device_data["serial_number"] = full.get("serial_number") or ""
+            device_data["name"] = full.get("name") or ""
+        else:
+            device_data["serial_number"] = cell_text(COL_SERIAL)
+            device_data["name"] = cell_text(COL_NAME)
 
         dlg = DeviceCardDialog(device_data, self)
         if dlg.exec():
@@ -545,7 +570,17 @@ class MainWindow(QMainWindow):
         ws = wb.active
         ws.title = "Журнал поверок"
 
-        headers = ["ID", "Тип", "Инв. №", "Место", "Дата окончания", "Статус", "Ответственный"]
+        headers = [
+            "ID",
+            "Тип",
+            "Инв. №",
+            "Наименование",
+            "Серийный №",
+            "Место",
+            "Дата окончания",
+            "Статус",
+            "Ответственный",
+        ]
         header_font = Font(name="Calibri", bold=True, color="FFFFFF", size=11)
         header_fill = PatternFill("solid", fgColor="1F3864")
         header_align = Alignment(horizontal="center", vertical="center")
@@ -574,6 +609,7 @@ class MainWindow(QMainWindow):
         status_f = self._status_from_filter()
         loc_f    = self.location_filter.currentText()
         resp_f   = self.responsible_filter.currentText()
+        search_f = self.side_panel.search_box.text().strip().lower()
 
         filtered = []
         for row in devices:
@@ -585,6 +621,8 @@ class MainWindow(QMainWindow):
                 continue
             if resp_f != "Все" and row.get("responsible_fio") != resp_f:
                 continue
+            if search_f and not self._row_matches_inv_serial_search(row, search_f):
+                continue
             filtered.append(row)
 
         for r, row in enumerate(filtered, 2):
@@ -593,6 +631,8 @@ class MainWindow(QMainWindow):
                 row.get("id"),
                 row.get("type") or "",
                 row.get("inventory_number") or "",
+                row.get("name") or "",
+                row.get("serial_number") or "",
                 row.get("location") or "",
                 row.get("expiry_date") or "",
                 STATUS_LABELS.get(status, "Нет данных"),
@@ -608,7 +648,7 @@ class MainWindow(QMainWindow):
                 cell.alignment = Alignment(horizontal="center", vertical="center")
             ws.row_dimensions[r].height = 18
 
-        col_widths = [6, 12, 16, 45, 16, 14, 25]
+        col_widths = [6, 12, 16, 28, 16, 36, 16, 14, 25]
         for i, w in enumerate(col_widths, 1):
             ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
 

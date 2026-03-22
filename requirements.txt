@@ -1,3 +1,4 @@
+# Медленный PyPI: scripts\install_requirements.bat (таймаут 120 с)
 openpyxl>=3.1.0
 PyQt6>=6.6.0
 requests>=2.31.0
