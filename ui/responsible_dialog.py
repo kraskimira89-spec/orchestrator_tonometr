@@ -33,7 +33,11 @@ class ResponsibleDialog(QDialog):
         self.setMinimumSize(560, 320)
 
         root = QVBoxLayout(self)
-        title = QLabel("Укажите MAX user_id для каждого ответственного.")
+        title = QLabel(
+            "Укажите MAX user_id для каждого ответственного.\n"
+            "Новую строку добавьте кнопкой «Добавить ответственного» — ФИО вручную, затем «Сохранить»."
+        )
+        title.setWordWrap(True)
         f = QFont("Calibri", 10)
         f.setBold(True)
         title.setFont(f)
@@ -51,17 +55,41 @@ class ResponsibleDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_refresh = QPushButton("Обновить из БД")
         btn_refresh.clicked.connect(self._load)
+        btn_add = QPushButton("➕ Добавить ответственного")
+        btn_add.setToolTip("Пустая строка: введите ФИО и при необходимости MAX user_id, затем Сохранить")
+        btn_add.clicked.connect(self._add_empty_row)
         btn_save = QPushButton("Сохранить")
         btn_save.clicked.connect(self._save)
         btn_close = QPushButton("Закрыть")
         btn_close.clicked.connect(self.accept)
         btn_row.addWidget(btn_refresh)
+        btn_row.addWidget(btn_add)
         btn_row.addStretch()
         btn_row.addWidget(btn_save)
         btn_row.addWidget(btn_close)
         root.addLayout(btn_row)
 
         self._load()
+
+    def _fio_readonly_flags(self):
+        return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+
+    def _fio_editable_flags(self):
+        return (
+            Qt.ItemFlag.ItemIsEnabled
+            | Qt.ItemFlag.ItemIsSelectable
+            | Qt.ItemFlag.ItemIsEditable
+        )
+
+    def _add_empty_row(self):
+        r = self.table.rowCount()
+        self.table.insertRow(r)
+        self.table.setItem(r, 0, QTableWidgetItem(""))
+        self.table.setItem(r, 1, QTableWidgetItem(""))
+        self.table.setItem(r, 2, QTableWidgetItem(""))  # пусто = новая запись, ФИО можно править
+        self.table.item(r, 0).setFlags(self._fio_editable_flags())
+        self.table.setCurrentCell(r, 0)
+        self.table.edit(self.table.model().index(r, 0))
 
     def _load(self):
         rows = get_responsible_persons_rows()
@@ -72,10 +100,9 @@ class ResponsibleDialog(QDialog):
             mid_s = "" if mid is None else str(mid)
             self.table.setItem(r, 0, QTableWidgetItem(fio))
             self.table.setItem(r, 1, QTableWidgetItem(mid_s))
-            self.table.setItem(r, 2, QTableWidgetItem(str(row.get("id", ""))))
-            self.table.item(r, 0).setFlags(
-                Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-            )
+            rid = row.get("id")
+            self.table.setItem(r, 2, QTableWidgetItem("" if rid is None else str(rid)))
+            self.table.item(r, 0).setFlags(self._fio_readonly_flags())
 
     def _save(self):
         for r in range(self.table.rowCount()):
