@@ -10,6 +10,10 @@ else:
 
 os.environ["APP_BASE_DIR"] = BASE_DIR
 
+# Рабочие каталоги рядом с .exe (или с проектом): создаём сразу, до импорта БД
+for _subdir in ("data", "documents"):
+    os.makedirs(os.path.join(BASE_DIR, _subdir), exist_ok=True)
+
 # Дальше — импорты приложения (после установки APP_BASE_DIR для db и PyInstaller)
 from pathlib import Path
 
