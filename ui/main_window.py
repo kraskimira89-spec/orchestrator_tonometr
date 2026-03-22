@@ -328,7 +328,12 @@ class MainWindow(QMainWindow):
 
             for c, val in enumerate(values):
                 cell = QTableWidgetItem(val)
-                cell.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if c == COL_LOCATION:
+                    cell.setTextAlignment(
+                        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+                    )
+                else:
+                    cell.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
                 if c == COL_STATUS:
                     cell.setBackground(QColor(bg_status))
