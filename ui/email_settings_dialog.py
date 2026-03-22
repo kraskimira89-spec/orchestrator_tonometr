@@ -52,7 +52,7 @@ class EmailSettingsDialog(QDialog):
     def _build_ui(self):
         lay = QVBoxLayout(self)
 
-        title = QLabel("📨 Настройки SMTP и рассылка по ответственным")
+        title = QLabel("📨 Настройки SMTP и утренняя сводка на email")
         title.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(title)
@@ -78,7 +78,7 @@ class EmailSettingsDialog(QDialog):
         self.inp_from = QLineEdit()
         self.inp_from.setPlaceholderText("Как в «От:» (по умолчанию = логин)")
         self.inp_admin = QLineEdit()
-        self.inp_admin.setPlaceholderText("Если у ответственного нет email — сюда")
+        self.inp_admin.setPlaceholderText("Сюда приходит ежедневная сводная ведомость")
         form.addRow("SMTP host:", self.inp_host)
         hp = QHBoxLayout()
         hp.addWidget(self.inp_port)
@@ -91,7 +91,7 @@ class EmailSettingsDialog(QDialog):
         form.addRow("Логин:", self.inp_login)
         form.addRow("Пароль приложения:", self.inp_pass)
         form.addRow("От (From):", self.inp_from)
-        form.addRow("Email администратора (fallback):", self.inp_admin)
+        form.addRow("Email администратора (сводка):", self.inp_admin)
         lay.addLayout(form)
 
         note = QLabel(
@@ -121,7 +121,12 @@ class EmailSettingsDialog(QDialog):
         test_to.addWidget(self.inp_test_to)
         lay.addLayout(test_to)
 
-        lay.addWidget(QLabel("<b>Email ответственных</b> (из справочника):"))
+        lbl_tbl = QLabel(
+            "<b>Email ответственных</b> (справочник; сводка на почту уходит только "
+            "<b>на адрес администратора</b> выше):"
+        )
+        lbl_tbl.setWordWrap(True)
+        lay.addWidget(lbl_tbl)
         self.table = QTableWidget(0, 2)
         self.table.setHorizontalHeaderLabels(["ФИО", "Email"])
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -130,7 +135,7 @@ class EmailSettingsDialog(QDialog):
         row_em = QHBoxLayout()
         btn_save_emails = QPushButton("💾 Сохранить email в таблице")
         btn_save_emails.clicked.connect(self._save_emails_table)
-        btn_send = QPushButton("📤 Рассылка сейчас (фон)")
+        btn_send = QPushButton("📤 Отправить сводку администратору (фон)")
         btn_send.clicked.connect(self._send_bulk)
         row_em.addWidget(btn_save_emails)
         row_em.addWidget(btn_send)
@@ -213,19 +218,20 @@ class EmailSettingsDialog(QDialog):
     def _send_bulk(self):
         self._save_smtp()
         self._save_emails_table()
-        self.lbl_status.setText("Рассылка запущена в фоне...")
+        self.lbl_status.setText("Отправка сводки запущена…")
         self.lbl_status.setStyleSheet("color: grey;")
         self._thread = _EmailSendThread(dry_run=False)
         self._thread.done.connect(self._on_send_done)
         self._thread.start()
 
     def _on_send_done(self, result: dict):
+        dup = result.get("skipped_already_today", 0)
         msg = (
-            f"Готово: отправлено {result['sent']}, "
-            f"пропущено {result['skipped']}, ошибок {result['errors']}"
+            f"Готово: отправлено писем {result['sent']}, "
+            f"пропусков {result['skipped']}, уже сегодня {dup}, ошибок {result['errors']}"
         )
         self.lbl_status.setText(msg)
         self.lbl_status.setStyleSheet(
             "color: green;" if result["errors"] == 0 else "color: orange;"
         )
-        QMessageBox.information(self, "Email-рассылка", msg)
+        QMessageBox.information(self, "Email-сводка", msg)

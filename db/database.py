@@ -360,6 +360,38 @@ def was_notification_sent_today(device_id: int, channel: str) -> bool:
     return row is not None
 
 
+def was_digest_notification_sent_today(channel: str, recipient_marker: str) -> bool:
+    """Сводка за сегодня уже уходила (device_id NULL, channel + message — маркер)."""
+    day = date.today().isoformat()
+    conn = get_connection()
+    row = conn.execute(
+        """
+        SELECT 1 FROM notification_log
+        WHERE device_id IS NULL
+          AND channel = ?
+          AND message = ?
+          AND substr(COALESCE(sent_at, ''), 1, 10) = ?
+        LIMIT 1
+        """,
+        (channel, recipient_marker, day),
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+def log_digest_notification(channel: str, recipient_marker: str) -> None:
+    conn = get_connection()
+    conn.execute(
+        """
+        INSERT INTO notification_log (device_id, channel, message, status)
+        VALUES (NULL, ?, ?, 'sent')
+        """,
+        (channel, recipient_marker),
+    )
+    conn.commit()
+    conn.close()
+
+
 def get_max_user_id_for_fio(fio: str) -> int | None:
     """Возвращает max_user_id для ФИО или None."""
     fio = (fio or "").strip()

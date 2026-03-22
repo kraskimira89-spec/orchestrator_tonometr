@@ -495,7 +495,8 @@ class MainWindow(QMainWindow):
         reply = QMessageBox.question(
             self,
             "Отправить уведомления",
-            "Отправить напоминания всем ответственным\nпо приборам с истекающим сроком поверки?",
+            "Отправить в MAX утреннюю сводную ведомость\n"
+            "(стадии, сроки, ответственные — без списка каждого прибора)?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
@@ -507,13 +508,13 @@ class MainWindow(QMainWindow):
         try:
             from core.notifier import check_and_notify
             result = check_and_notify(dry_run=False)
+            dup = result.get("skipped_already_today", 0)
             QMessageBox.information(
                 self,
                 "Готово",
-                f"✅ Отправлено:  {result['sent']}\n"
-                f"⏭  Пропущено: {result['skipped']}\n"
-                f"❌ Ошибок:    {result['errors']}\n\n"
-                f"Приборов с истекающим сроком: {len(result['messages'])}",
+                f"✅ Отправлено сообщений: {result['sent']}\n"
+                f"⏭  Уже сегодня (не дублировали): {dup}\n"
+                f"❌ Ошибок: {result['errors']}",
             )
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", str(e))

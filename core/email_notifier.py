@@ -1,7 +1,5 @@
 """
-Email-уведомления о поверках через SMTP.
-Полностью независим от CalDAV и MAX.
-Поддерживает Mail.ru, Яндекс, Gmail и любой SMTP.
+Email: утренняя сводная ведомость (одно письмо на smtp_admin_email в день).
 """
 import os
 import sys
@@ -12,16 +10,21 @@ import smtplib
 import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from datetime import date, timedelta
+from datetime import date
 
+from core.daily_digest import (
+    compute_digest,
+    digest_subject,
+    format_digest_html,
+    format_digest_plain,
+)
 from db.database import (
-    get_connection,
-    get_responsible_email,
+    get_all_devices,
     get_setting,
-    was_notification_sent_today,
+    log_digest_notification,
+    was_digest_notification_sent_today,
 )
 
-WARN_DAYS = 30
 ADMIN_EMAIL_KEY = "smtp_admin_email"
 
 SMTP_PRESETS = {
@@ -60,133 +63,7 @@ def get_smtp_settings() -> dict:
     }
 
 
-def _device_type_label(d: dict) -> str:
-    return d.get("device_type") or d.get("type") or ""
-
-
-def _make_subject(count: int, has_overdue: bool) -> str:
-    if has_overdue:
-        return f"⚠️ Поверки: {count} приборов требуют внимания (есть просроченные)"
-    return f"📋 Поверки: {count} приборов — срок истекает в ближайшие 30 дней"
-
-
-def _make_html(fio: str, devices: list, today: date) -> str:
-    rows_html = ""
-    for d in devices:
-        expiry = d["expiry_date"]
-        exp_date = date.fromisoformat(expiry)
-        days_left = (exp_date - today).days
-
-        if days_left < 0:
-            status_txt = f"ПРОСРОЧЕНО на {abs(days_left)} дн."
-            status_color = "#c0392b"
-            row_bg = "#fdf2f2"
-        elif days_left <= 7:
-            status_txt = f"через {days_left} дн. ⚠️"
-            status_color = "#e67e22"
-            row_bg = "#fef9f0"
-        else:
-            status_txt = f"через {days_left} дн."
-            status_color = "#27ae60"
-            row_bg = "#f9fef9"
-
-        rows_html += f"""
-        <tr style="background:{row_bg};">
-          <td style="padding:6px 10px; border-bottom:1px solid #eee;">
-            {_device_type_label(d)}
-          </td>
-          <td style="padding:6px 10px; border-bottom:1px solid #eee;">
-            {d.get('inventory_number','')}
-          </td>
-          <td style="padding:6px 10px; border-bottom:1px solid #eee;">
-            {d.get('location','')}
-          </td>
-          <td style="padding:6px 10px; border-bottom:1px solid #eee;">
-            {expiry}
-          </td>
-          <td style="padding:6px 10px; border-bottom:1px solid #eee;
-                     color:{status_color}; font-weight:bold;">
-            {status_txt}
-          </td>
-        </tr>"""
-
-    name_line = f"Уважаемый(ая) <b>{fio}</b>," if fio else "Добрый день,"
-
-    return f"""<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"></head>
-<body style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">
-  <div style="max-width:700px; margin:0 auto; padding:20px;">
-
-    <div style="background:#2c3e50; color:white; padding:16px 20px;
-                border-radius:6px 6px 0 0;">
-      <h2 style="margin:0;">📋 Оркестратор Поверки</h2>
-      <p style="margin:4px 0 0; font-size:12px; opacity:0.8;">
-        Автоматическое уведомление о сроках поверки
-      </p>
-    </div>
-
-    <div style="background:#f8f9fa; padding:16px 20px; border:1px solid #dee2e6;
-                border-top:none; border-radius:0 0 6px 6px;">
-
-      <p>{name_line}</p>
-      <p>Следующие приборы требуют вашего внимания:</p>
-
-      <table style="width:100%; border-collapse:collapse;
-                    border:1px solid #dee2e6; border-radius:4px;">
-        <thead>
-          <tr style="background:#495057; color:white;">
-            <th style="padding:8px 10px; text-align:left;">Тип</th>
-            <th style="padding:8px 10px; text-align:left;">Инв. №</th>
-            <th style="padding:8px 10px; text-align:left;">Местонахождение</th>
-            <th style="padding:8px 10px; text-align:left;">Срок поверки</th>
-            <th style="padding:8px 10px; text-align:left;">Статус</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows_html}
-        </tbody>
-      </table>
-
-      <p style="margin-top:20px; font-size:12px; color:#666;">
-        Это письмо отправлено автоматически системой «Оркестратор Поверки».<br>
-        Дата отправки: {today.strftime('%d.%m.%Y')}
-      </p>
-    </div>
-
-  </div>
-</body>
-</html>"""
-
-
-def _make_plain(fio: str, devices: list, today: date) -> str:
-    lines = [
-        "Оркестратор Поверки — уведомление о сроках",
-        f"Дата: {today.strftime('%d.%m.%Y')}",
-        "",
-        f"Ответственный: {fio}" if fio else "Уважаемый коллега,",
-        "",
-        "Приборы требующие внимания:",
-        "-" * 60,
-    ]
-    for d in devices:
-        expiry = d["expiry_date"]
-        exp_date = date.fromisoformat(expiry)
-        days_left = (exp_date - today).days
-        if days_left < 0:
-            status = f"ПРОСРОЧЕНО на {abs(days_left)} дн."
-        else:
-            status = f"через {days_left} дн."
-        lines.append(
-            f"{_device_type_label(d)} | {d.get('inventory_number','')} | "
-            f"{d.get('location','')} | {expiry} | {status}"
-        )
-    lines += ["", "Это письмо отправлено автоматически."]
-    return "\n".join(lines)
-
-
 def send_email(to_addr: str, subject: str, html: str, plain: str) -> bool:
-    """Отправляет письмо. Возвращает True при успехе."""
     s = get_smtp_settings()
     if not s["host"] or not s["login"] or not s["password"]:
         print("SMTP не настроен — письмо не отправлено.")
@@ -221,121 +98,74 @@ def send_email(to_addr: str, subject: str, html: str, plain: str) -> bool:
 
 
 def test_smtp(to_addr: str) -> str:
-    """Отправляет тестовое письмо. Возвращает строку результата."""
-    today = date.today()
-    html = _make_html("Тестовый получатель", [], today).replace(
-        "Следующие приборы требуют вашего внимания:",
-        "Это тестовое письмо из системы «Оркестратор Поверки».<br>"
-        "Если вы его получили — SMTP настроен корректно.",
+    digest = compute_digest([])
+    plain = (
+        "Тест SMTP — Оркестратор Поверки.\n\n"
+        + format_digest_plain(digest).replace(
+            "Подробный список приборов — в приложении.",
+            "Если вы читаете это письмо, SMTP настроен верно.",
+        )
     )
-    plain = "Тестовое письмо из системы Оркестратор Поверки. SMTP работает корректно."
+    html = format_digest_html(digest).replace(
+        "Детали — в приложении. Письмо сформировано автоматически.",
+        "<b>Тест SMTP.</b> Если письмо получено — настройки верны.<br>"
+        "Детали — в приложении.",
+    )
     ok = send_email(to_addr, "✅ Тест SMTP — Оркестратор Поверки", html, plain)
     return "✅ Письмо отправлено успешно." if ok else "❌ Ошибка отправки. Проверьте настройки SMTP."
 
 
-def _filter_devices_not_emailed_today(devices: list) -> tuple[list, int]:
-    """Оставляет приборы, по которым сегодня ещё не слали email; возвращает число отфильтрованных."""
-    kept = []
-    dup = 0
-    for d in devices:
-        did = d.get("id")
-        if was_notification_sent_today(int(did), "email"):
-            dup += 1
-        else:
-            kept.append(d)
-    return kept, dup
-
-
 def send_email_notifications(dry_run: bool = False) -> dict:
     """
-    Отправляет email каждому ответственному о его приборах.
-    Fallback: если email не указан — шлёт на admin email.
-    Повторно в тот же день по тому же прибору не шлёт (notification_log, channel=email).
+    Одна сводка на email администратора за сутки (без перечня приборов).
     """
-    today = date.today()
-    deadline = today + timedelta(days=WARN_DAYS)
-
-    conn = get_connection()
-    rows = conn.execute(
-        """
-        SELECT d.id, d.type, d.inventory_number, d.location,
-               d.responsible_fio,
-               v.expiry_date
-        FROM devices d
-        LEFT JOIN verifications v ON v.id = (
-            SELECT id FROM verifications
-            WHERE device_id = d.id
-            ORDER BY expiry_date DESC LIMIT 1
-        )
-        WHERE v.expiry_date IS NOT NULL
-          AND v.expiry_date <= ?
-        """,
-        (deadline.isoformat(),),
-    ).fetchall()
-    conn.close()
-
-    if not rows:
-        print("Email: нет приборов с истекающим сроком.")
-        return {"sent": 0, "skipped": 0, "errors": 0, "skipped_already_today": 0}
-
-    by_fio: dict[str, list] = {}
-    for row in rows:
-        r = dict(row)
-        r["device_type"] = r.get("type") or ""
-        fio = r["responsible_fio"] or ""
-        by_fio.setdefault(fio, []).append(r)
-
     s = get_smtp_settings()
-    admin_email = s["admin"]
+    admin = (s.get("admin") or "").strip()
+    if not admin:
+        print("Email: не задан «Email администратора» в настройках SMTP — сводку некуда отправить.")
+        return {
+            "sent": 0,
+            "skipped": 1,
+            "errors": 0,
+            "skipped_already_today": 0,
+        }
 
-    sent = skipped = errors = skipped_already_today = 0
+    marker = "email_digest_admin"
+    if was_digest_notification_sent_today("email_digest", marker):
+        print("Email: утренняя сводка уже отправлялась сегодня.")
+        return {
+            "sent": 0,
+            "skipped": 0,
+            "errors": 0,
+            "skipped_already_today": 1,
+        }
 
-    for fio, devices in by_fio.items():
-        devices, n_dup = _filter_devices_not_emailed_today(devices)
-        skipped_already_today += n_dup
-        if not devices:
-            print(
-                f"  Email: все приборы для «{fio or 'без ответственного'}» "
-                f"уже уведомлены сегодня ({n_dup} шт.)."
-            )
-            continue
+    digest = compute_digest(get_all_devices())
+    subject = digest_subject(digest)
+    html = format_digest_html(digest)
+    plain = format_digest_plain(digest)
 
-        email = get_responsible_email(fio) or admin_email
-        if not email:
-            print(f"  Нет email для «{fio or 'без ответственного'}» — пропускаем.")
-            skipped += 1
-            continue
+    if dry_run:
+        print(f"  [dry-run] сводка → {admin} ({digest['total']} приборов в журнале)")
+        return {
+            "sent": 1,
+            "skipped": 0,
+            "errors": 0,
+            "skipped_already_today": 0,
+        }
 
-        has_overdue = any(date.fromisoformat(d["expiry_date"]) < today for d in devices)
-        subject = _make_subject(len(devices), has_overdue)
-        html = _make_html(fio, devices, today)
-        plain = _make_plain(fio, devices, today)
-
-        if dry_run:
-            extra = f" (уже сегодня в логе: {n_dup})" if n_dup else ""
-            print(f"  [dry-run] {fio} → {email}: {len(devices)} приборов{extra}")
-            sent += 1
-            continue
-
-        if send_email(email, subject, html, plain):
-            sent += 1
-            conn = get_connection()
-            for d in devices:
-                conn.execute(
-                    """
-                    INSERT INTO notification_log (device_id, channel, message, status)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (d["id"], "email", subject, "sent"),
-                )
-            conn.commit()
-            conn.close()
-        else:
-            errors += 1
+    if send_email(admin, subject, html, plain):
+        log_digest_notification("email_digest", marker)
+        return {
+            "sent": 1,
+            "skipped": 0,
+            "errors": 0,
+            "skipped_already_today": 0,
+        }
 
     return {
-        "sent": sent,
-        "skipped": skipped,
-        "errors": errors,
-        "skipped_already_today": skipped_already_today,
+        "sent": 0,
+        "skipped": 0,
+        "errors": 1,
+        "skipped_already_today": 0,
     }

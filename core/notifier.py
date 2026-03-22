@@ -1,11 +1,10 @@
 """
-Уведомления через MAX Bot API: приборы группируются по ответственному,
-для каждого берётся max_user_id из responsible_persons; если нет — рассылка на MAX_ADMIN_USER_ID.
+Уведомления через MAX Bot API: утренняя сводная ведомость (стадии, сроки, ответственные).
+Одинаковый текст сводки уходит каждому уникальному получателю (ответственный → max_user_id, иначе админ).
 """
 import os
 import sys
-from collections import defaultdict
-from datetime import date, datetime
+from datetime import date
 
 import requests
 from dotenv import load_dotenv
@@ -19,24 +18,22 @@ load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 
 MAX_BOT_TOKEN = os.getenv("MAX_BOT_TOKEN", "")
 MAX_ADMIN_USER_ID = (os.getenv("MAX_ADMIN_USER_ID") or os.getenv("ADMIN_CHAT_ID") or "").strip()
-NOTIFY_DAYS_1 = int(os.getenv("NOTIFY_DAYS_1", "60"))
-NOTIFY_DAYS_2 = int(os.getenv("NOTIFY_DAYS_2", "7"))
 
 MAX_API_URL = "https://platform-api.max.ru"
 
+from core.daily_digest import compute_digest, format_digest_plain  # noqa: E402
 from db.database import (  # noqa: E402
     get_all_devices,
-    get_connection,
     get_max_user_id_for_fio,
+    log_digest_notification,
+    was_digest_notification_sent_today,
 )
 
-# Лимит MAX на одно сообщение — 4000 символов; оставляем запас под футер и «часть n/m».
 MAX_MSG_LEN = 3800
 _FOOTER_RESERVE = 150
 
 
 def _split_into_chunks(header: str, lines: list[str]) -> list[str]:
-    """Разбивает список строк на сообщения не длиннее MAX_MSG_LEN (с запасом под футер)."""
     limit = MAX_MSG_LEN - _FOOTER_RESERVE
     chunks: list[str] = []
     h = header.rstrip() + "\n\n"
@@ -55,7 +52,6 @@ def _split_into_chunks(header: str, lines: list[str]) -> list[str]:
 
 
 def send_message(chat_id: str, text: str) -> bool:
-    """Отправка сообщения в MAX: user_id в query, текст в JSON."""
     if not MAX_BOT_TOKEN:
         print("❌ MAX_BOT_TOKEN не задан в .env")
         return False
@@ -83,24 +79,11 @@ def send_message(chat_id: str, text: str) -> bool:
         return False
 
 
-def days_until(expiry_str: str) -> int | None:
-    try:
-        expiry = datetime.strptime(expiry_str, "%Y-%m-%d").date()
-        return (expiry - date.today()).days
-    except Exception:
-        return None
-
-
 def _admin_chat_id() -> str | None:
     return MAX_ADMIN_USER_ID if MAX_ADMIN_USER_ID else None
 
 
 def resolve_recipient_user_id(responsible_fio: str) -> str | None:
-    """
-    MAX user_id для ответственного: из responsible_persons,
-    иначе администратор MAX_ADMIN_USER_ID.
-    Пустое ФИО — сразу администратор.
-    """
     fio = (responsible_fio or "").strip()
     if not fio:
         return _admin_chat_id()
@@ -111,108 +94,78 @@ def resolve_recipient_user_id(responsible_fio: str) -> str | None:
     return _admin_chat_id()
 
 
-def _device_notice_lines(device: dict, urgency: str, detail: str, expiry_fmt: str) -> list[str]:
-    inv = device.get("inventory_number") or "—"
-    loc = device.get("location") or "—"
-    resp = device.get("responsible_fio") or "не указан"
-    dev_type = device.get("type") or "Прибор"
-    return [
-        f"{urgency}",
-        f"📋 {dev_type}: {inv}",
-        f"📍 {loc}",
-        f"👤 Ответственный: {resp}",
-        f"📅 Дата окончания: {expiry_fmt}",
-        f"⏳ {detail.capitalize()}",
-        "━━━━━━━━━━━━━━━━━━",
-    ]
-
-
 def check_and_notify(dry_run: bool = False) -> dict:
     """
-    Уведомления сгруппированы по получателю (один user_id — одно сообщение со всеми приборами).
+    Рассылка утренней сводки всем уникальным MAX-получателям из журнала приборов.
     """
     devices = get_all_devices()
-    stats = {"sent": 0, "skipped": 0, "errors": 0, "messages": []}
+    digest = compute_digest(devices)
+    base_plain = format_digest_plain(digest)
 
-    # (fio_key, recipient_id) -> список фрагментов
-    # fio_key — для отладки; recipient_id — куда слать
-    groups: dict[tuple[str, str], list] = defaultdict(list)
+    recipients: set[str] = set()
+    for d in devices:
+        rid = resolve_recipient_user_id((d.get("responsible_fio") or "").strip())
+        if rid:
+            recipients.add(rid)
 
-    for device in devices:
-        expiry = device.get("expiry_date")
-        if not expiry:
-            stats["skipped"] += 1
-            continue
+    stats: dict = {
+        "sent": 0,
+        "skipped": 0,
+        "errors": 0,
+        "messages": [],
+        "skipped_already_today": 0,
+    }
 
-        d = days_until(expiry)
-        if d is None:
-            stats["skipped"] += 1
-            continue
+    if not MAX_BOT_TOKEN:
+        print("❌ MAX_BOT_TOKEN не задан в .env")
+        stats["errors"] = 1
+        return stats
 
-        if d < 0:
-            urgency = "🔴 ПРОСРОЧЕНО"
-            detail = f"срок истёк {abs(d)} дн. назад"
-        elif d <= NOTIFY_DAYS_2:
-            urgency = "🔴 СРОЧНО"
-            detail = f"до окончания {d} дн."
-        elif d <= NOTIFY_DAYS_1:
-            urgency = "🟡 ВНИМАНИЕ"
-            detail = f"до окончания {d} дн."
-        else:
-            stats["skipped"] += 1
-            continue
-
-        fio = (device.get("responsible_fio") or "").strip()
-        fio_key = fio if fio else "__пусто__"
-        recipient = resolve_recipient_user_id(fio)
-        if not recipient:
-            stats["errors"] += 1
-            continue
-
-        expiry_fmt = datetime.strptime(expiry, "%Y-%m-%d").strftime("%d.%m.%Y")
-        groups[(fio_key, recipient)].append(
-            (device, urgency, detail, expiry_fmt)
-        )
+    if not recipients:
+        print("❌ Нет получателей MAX (укажите MAX_ADMIN_USER_ID в .env).")
+        stats["errors"] = 1
+        return stats
 
     today_str = date.today().strftime("%d.%m.%Y")
+    footer = f"Оркестратор Поверки | {today_str}"
 
-    for (_fio_key, chat_id), items in groups.items():
-        blocks = []
-        for device, urgency, detail, expiry_fmt in items:
-            blocks.extend(_device_notice_lines(device, urgency, detail, expiry_fmt))
+    body_lines = base_plain.split("\n")
+    header = (body_lines[0] + "\n━━━━━━━━━━━━━━━━━━") if body_lines else "📊 Сводка"
+    rest = body_lines[1:] if len(body_lines) > 1 else []
 
-        header = (
-            f"Напоминания о поверке ({len(items)} шт.)\n"
-            f"━━━━━━━━━━━━━━━━━━"
-        )
-        footer = f"Оркестратор Поверки | {today_str}"
-        body_chunks = _split_into_chunks(header, blocks)
+    def _chat_key(x: str):
+        try:
+            return (0, int(x))
+        except ValueError:
+            return (1, x)
+
+    for chat_id in sorted(recipients, key=_chat_key):
+        if was_digest_notification_sent_today("MAX_digest", chat_id):
+            stats["skipped_already_today"] += 1
+            print(f"  MAX: сводка для chat_id={chat_id} уже была сегодня.")
+            continue
+
+        chunks = _split_into_chunks(header, rest)
         final_parts: list[str] = []
-        n = len(body_chunks)
-        for i, body in enumerate(body_chunks, 1):
+        n = len(chunks)
+        for i, body in enumerate(chunks, 1):
             suffix = f" [часть {i}/{n}]" if n > 1 else ""
             final_parts.append(f"{body}\n\n{footer}{suffix}")
 
         combined_for_log = "\n\n---\n\n".join(final_parts)
-
-        for device, _u, _d, _e in items:
-            stats["messages"].append(
-                {
-                    "chat_id": chat_id,
-                    "text": combined_for_log,
-                    "device_id": device.get("id"),
-                }
-            )
+        stats["messages"].append(
+            {"chat_id": chat_id, "text": combined_for_log, "device_id": None}
+        )
 
         if dry_run:
-            for i, final_text in enumerate(final_parts, 1):
+            for i, part in enumerate(final_parts, 1):
                 print(
                     f"[DRY RUN] → chat_id={chat_id}, часть {i}/{len(final_parts)}, "
-                    f"{len(final_text)} симв."
+                    f"{len(part)} симв."
                 )
-                print(final_text)
+                print(part)
                 print()
-            stats["sent"] += len(items)
+            stats["sent"] += 1
             continue
 
         all_ok = True
@@ -222,36 +175,21 @@ def check_and_notify(dry_run: bool = False) -> dict:
                 break
 
         if all_ok:
-            conn = get_connection()
-            cur = conn.cursor()
-            for device, _u, _d, _e in items:
-                cur.execute(
-                    """
-                    INSERT INTO notification_log
-                        (device_id, channel, message, status)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (device.get("id"), "MAX", combined_for_log, "sent"),
-                )
-                stats["sent"] += 1
-            conn.commit()
-            conn.close()
+            log_digest_notification("MAX_digest", chat_id)
+            stats["sent"] += 1
         else:
-            stats["errors"] += len(items)
+            stats["errors"] += 1
 
     return stats
 
 
 def send_notifications(dry_run: bool = False):
-    """Точка входа для планировщика и скриптов."""
     return check_and_notify(dry_run=dry_run)
 
 
 if __name__ == "__main__":
-    print("🔔 Запуск проверки уведомлений...\n")
+    print("🔔 Утренняя сводка MAX…\n")
     result = send_notifications()
-    print(f"✅ Отправлено:  {result['sent']}")
-    print(f"⏭  Пропущено:  {result['skipped']}")
-    print(f"❌ Ошибок:     {result['errors']}")
-    if result["messages"]:
-        print(f"\nЗаписей в очереди уведомлений: {len(result['messages'])}")
+    print(f"✅ Отправлено сообщений:  {result['sent']}")
+    print(f"⏭  Уже сегодня:           {result.get('skipped_already_today', 0)}")
+    print(f"❌ Ошибок:                {result['errors']}")
