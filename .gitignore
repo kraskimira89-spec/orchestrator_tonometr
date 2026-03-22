@@ -1,5 +1,8 @@
-data/orchestrator.db
-documents/
+data/*.db
+data/*.xlsx
+documents/*
+!documents/.gitkeep
+!data/.gitkeep
 __pycache__/
 *.pyc
 dist/

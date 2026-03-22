@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from db.database import get_connection
+from db.database import get_connection, get_location_choices
 from ui.device_card import DatePickerWidget
 
 
@@ -74,9 +74,13 @@ class AddDeviceDialog(QDialog):
         form.addRow(lbl("Инв. №:"), self.f_inv)
 
         # Место (склад/вагон)
-        self.f_location = QLineEdit()
-        self.f_location.setPlaceholderText("Ангаро-Ленское 28 ССК Том.фил. (ВАГОН 1)")
+        self.f_location = QComboBox()
+        self.f_location.setEditable(True)
         self.f_location.setMinimumWidth(320)
+        self.f_location.addItems(get_location_choices())
+        self.f_location.lineEdit().setPlaceholderText(
+            "Ангаро-Ленское 28 ССК Том.фил. (ВАГОН 1)"
+        )
         form.addRow(lbl("Место:"), self.f_location)
 
         # Ответственный
@@ -128,7 +132,7 @@ class AddDeviceDialog(QDialog):
             return
 
         device_type  = self.f_type.currentText()
-        location     = self.f_location.text().strip()
+        location     = self.f_location.currentText().strip()
         resp         = self.f_resp.text().strip()
         expiry       = self.f_expiry.get_value()
         vdate        = self.f_vdate.get_value()

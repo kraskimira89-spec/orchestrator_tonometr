@@ -10,13 +10,16 @@ from PyQt6.QtCore import QDate, Qt
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QCalendarWidget,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -25,7 +28,14 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from db.database import get_connection, get_device_verifications, update_responsible_fio
+from db.database import (
+    delete_device,
+    duplicate_device,
+    get_connection,
+    get_device_verifications,
+    get_location_choices,
+    update_responsible_fio,
+)
 from ui.documents_widget import DocumentsWidget
 
 
@@ -139,8 +149,11 @@ class DeviceCardDialog(QDialog):
         form.addRow(make_label("Серийный номер:"), self.f_serial)
 
         # Место
-        self.f_location = QLineEdit(device.get("location") or "")
+        self.f_location = QComboBox()
+        self.f_location.setEditable(True)
         self.f_location.setMinimumWidth(300)
+        self.f_location.addItems(get_location_choices(device.get("location")))
+        self.f_location.setCurrentText(device.get("location") or "")
         form.addRow(make_label("Место:"), self.f_location)
 
         # Ответственный (ФИО)
@@ -219,6 +232,17 @@ class DeviceCardDialog(QDialog):
             self.docs_widget = DocumentsWidget(device_id=int(did), parent=self)
             root.addWidget(self.docs_widget)
 
+        # ── удалить / копировать ────────────────────────────────────────────
+        extra_btns = QHBoxLayout()
+        self.btn_delete = QPushButton("🗑  Удалить")
+        self.btn_copy = QPushButton("📋  Копировать")
+        self.btn_delete.clicked.connect(self._on_delete_device)
+        self.btn_copy.clicked.connect(self._on_copy_device)
+        extra_btns.addWidget(self.btn_delete)
+        extra_btns.addWidget(self.btn_copy)
+        extra_btns.addStretch()
+        root.addLayout(extra_btns)
+
         # ── кнопки ────────────────────────────────────────────────────────
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
@@ -230,6 +254,44 @@ class DeviceCardDialog(QDialog):
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
 
+    def _on_delete_device(self):
+        did = self.device.get("id")
+        if did is None:
+            return
+        reply = QMessageBox.question(
+            self,
+            "Удаление прибора",
+            "Удалить прибор и всю историю поверок и документы? Действие необратимо.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        delete_device(int(did))
+        self.accept()
+
+    def _on_copy_device(self):
+        did = self.device.get("id")
+        if did is None:
+            return
+        text, ok = QInputDialog.getText(
+            self,
+            "Копировать прибор",
+            "Новый инвентарный номер для копии:",
+        )
+        if not ok or not text.strip():
+            return
+        try:
+            new_id = duplicate_device(int(did), text.strip())
+            QMessageBox.information(
+                self,
+                "Копия создана",
+                f"Добавлен прибор с ID {new_id}. Его можно открыть в таблице.",
+            )
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка копирования", str(e))
+
     # ── сохранение ────────────────────────────────────────────────────────
     def save_and_accept(self):
         device_id   = self.device.get("id")
@@ -237,7 +299,7 @@ class DeviceCardDialog(QDialog):
         new_inv     = self.f_inv.text().strip()
         new_name    = self.f_name.text().strip()
         new_serial  = self.f_serial.text().strip()
-        new_loc     = self.f_location.text().strip()
+        new_loc     = self.f_location.currentText().strip()
         new_resp    = self.f_resp.text().strip()
         new_expiry  = self.f_expiry.get_value()
         new_vdate   = self.f_verif_date.get_value()

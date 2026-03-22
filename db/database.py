@@ -3,10 +3,16 @@ import shutil
 import sqlite3
 from datetime import date
 
-# Путь к файлу базы данных
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, "data", "orchestrator.db")
-DOCUMENTS_DIR = os.path.join(BASE_DIR, "documents")
+def _get_base_dir() -> str:
+    return os.environ.get(
+        "APP_BASE_DIR",
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    )
+
+
+# Путь к файлу базы данных и каталогу документов (рядом с .exe при сборке PyInstaller)
+DB_PATH = os.path.join(_get_base_dir(), "data", "orchestrator.db")
+DOCUMENTS_DIR = os.path.join(_get_base_dir(), "documents")
 
 
 def get_connection():
@@ -20,6 +26,7 @@ def get_connection():
 def init_database():
     """Создаёт все таблицы если их ещё нет."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    os.makedirs(DOCUMENTS_DIR, exist_ok=True)
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -208,6 +215,7 @@ def get_all_devices():
             d.inventory_number,
             d.serial_number,
             d.location,
+            d.note,
             d.responsible_fio,
             v.expiry_date,
             v.verification_date,
@@ -275,6 +283,81 @@ def update_responsible_fio(device_id: int, fio: str):
     )
     conn.commit()
     conn.close()
+
+
+def get_location_choices(include: str | None = None) -> list[str]:
+    """Уникальные места из журнала; при необходимости добавляет текущее значение."""
+    devices = get_all_devices()
+    locs = sorted(
+        {
+            str(d["location"]).strip()
+            for d in devices
+            if d.get("location") and str(d["location"]).strip()
+        }
+    )
+    if include and str(include).strip():
+        s = str(include).strip()
+        if s not in locs:
+            locs.append(s)
+            locs.sort()
+    return locs
+
+
+def update_device_location(device_id: int, location: str) -> None:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE devices SET location = ?, updated_at = datetime('now') WHERE id = ?",
+        (location.strip(), device_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_device_note(device_id: int, note: str) -> None:
+    conn = get_connection()
+    conn.execute(
+        "UPDATE devices SET note = ?, updated_at = datetime('now') WHERE id = ?",
+        (note.strip(), device_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def duplicate_device(source_device_id: int, new_inventory_number: str) -> int:
+    """Копия прибора без истории поверок; возвращает id новой записи."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT type, name, serial_number, location, responsible_fio
+        FROM devices WHERE id = ?
+        """,
+        (source_device_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        raise ValueError("Прибор не найден")
+    name = row["name"] or row["type"] or "Прибор"
+    cur.execute(
+        """
+        INSERT INTO devices (type, name, inventory_number, serial_number, location, responsible_fio)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            row["type"],
+            name,
+            new_inventory_number.strip(),
+            row["serial_number"] or "",
+            row["location"] or "",
+            row["responsible_fio"] or "",
+        ),
+    )
+    new_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return new_id
 
 
 def get_responsible_persons_rows():

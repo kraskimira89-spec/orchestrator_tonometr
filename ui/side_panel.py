@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -81,18 +82,30 @@ class _FloatWindow(QWidget):
             "QPushButton:pressed { background: #C8C8C8; }"
         )
 
-        lbl = QLabel("Поиск по инв., серийному № и наименованию:")
+        lbl = QLabel("Поиск по базе (все поля прибора):")
         lbl.setStyleSheet("border:none;")
         layout.addWidget(lbl)
 
         self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("Инв., серийный № или наименование…")
+        self.search_box.setPlaceholderText("Текст для поиска по БД…")
         self.search_box.setStyleSheet("border: 1px solid #999; border-radius:3px; background:white;")
         self.search_box.textChanged.connect(panel.search_box.setText)
         panel.search_box.textChanged.connect(
             lambda t: self.search_box.setText(t) if self.search_box.text() != t else None
         )
         layout.addWidget(self.search_box)
+
+        nav_f = QHBoxLayout()
+        for text, sig in (
+            ("Найти", panel.sig_search_find),
+            ("Далее", panel.sig_search_next),
+            ("Назад", panel.sig_search_prev),
+        ):
+            nb = QPushButton(text)
+            nb.setStyleSheet(btn_style)
+            nb.clicked.connect(sig.emit)
+            nav_f.addWidget(nb)
+        layout.addLayout(nav_f)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
@@ -189,6 +202,9 @@ class SidePanel(QWidget):
     sig_caldav_yandex = pyqtSignal()
     sig_caldav_mailru = pyqtSignal()
     sig_email_settings = pyqtSignal()
+    sig_search_find = pyqtSignal()
+    sig_search_next = pyqtSignal()
+    sig_search_prev = pyqtSignal()
 
     DOCKED   = "docked"
     HIDDEN   = "hidden"
@@ -210,9 +226,25 @@ class SidePanel(QWidget):
         self._content = QWidget()
         self._content.setMinimumWidth(160)
         self._content.setStyleSheet("background:#F5F5F5;")
-        outer.addWidget(self._content, stretch=1)
-
         self._build_content(self._content)
+
+        # Иначе сумма высот кнопок задаёт огромный minimumHeight всего окна
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self._scroll.setWidget(self._content)
+        self._scroll.setMinimumSize(0, 0)
+
+        outer.addWidget(self._scroll, stretch=1)
+
+        self.setMinimumSize(0, 0)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Ignored)
         self.setFixedWidth(self._panel_width)
 
     def _build_content(self, parent: QWidget):
@@ -263,17 +295,38 @@ class SidePanel(QWidget):
         layout.addWidget(sep0)
 
         # поиск
-        lbl_search = QLabel("Поиск по инв., серийному № и наименованию:")
+        lbl_search = QLabel("Поиск по базе (все поля прибора):")
         lbl_search.setStyleSheet("background:transparent;")
         layout.addWidget(lbl_search)
 
         self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("Инв., серийный № или наименование…")
+        self.search_box.setPlaceholderText("Текст для поиска по БД…")
         self.search_box.setStyleSheet(
             "border:1px solid #AAAAAA; border-radius:3px; "
             "background:white; padding:2px 4px;"
         )
         layout.addWidget(self.search_box)
+
+        nav_row = QHBoxLayout()
+        self.search_btn_find = QPushButton("Найти")
+        self.search_btn_next = QPushButton("Далее")
+        self.search_btn_prev = QPushButton("Назад")
+        small_nav_style = (
+            "QPushButton { padding: 4px 8px; font-size: 9pt; border: 1px solid #AAAAAA; "
+            "border-radius: 3px; background: #FFFFFF; }"
+            "QPushButton:hover { background: #E8E8E8; }"
+            "QPushButton:disabled { color: #999; }"
+        )
+        for b in (self.search_btn_find, self.search_btn_next, self.search_btn_prev):
+            b.setStyleSheet(small_nav_style)
+            b.setEnabled(False)
+        self.search_btn_find.clicked.connect(self.sig_search_find.emit)
+        self.search_btn_next.clicked.connect(self.sig_search_next.emit)
+        self.search_btn_prev.clicked.connect(self.sig_search_prev.emit)
+        nav_row.addWidget(self.search_btn_find)
+        nav_row.addWidget(self.search_btn_next)
+        nav_row.addWidget(self.search_btn_prev)
+        layout.addLayout(nav_row)
 
         layout.addSpacing(4)
 
@@ -409,14 +462,14 @@ class SidePanel(QWidget):
 
     def _hide_panel(self):
         self._mode = self.HIDDEN
-        self._content.hide()
+        self._scroll.hide()
         self._handle.hide()
         self.setFixedWidth(24)
         self._ensure_show_btn()
 
     def _show_panel(self):
         self._mode = self.DOCKED
-        self._content.show()
+        self._scroll.show()
         self._handle.show()
         self.setFixedWidth(self._panel_width)
         if hasattr(self, "_show_btn"):
@@ -427,7 +480,7 @@ class SidePanel(QWidget):
 
     def _make_floating(self):
         self._mode = self.FLOATING
-        self._content.hide()
+        self._scroll.hide()
         self._handle.hide()
         self.setFixedWidth(24)
         self._ensure_show_btn()

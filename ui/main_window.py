@@ -6,24 +6,39 @@ PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer, QSize
 from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QComboBox,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QMainWindow,
     QMessageBox,
+    QScrollArea,
     QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
+    QSizePolicy,
 )
 
-from db.database import get_all_devices, get_connection, init_database, update_responsible_fio
+from core.journal_dates import journal_reminder_dates
+
+from db.database import (
+    get_all_devices,
+    get_connection,
+    get_location_choices,
+    init_database,
+    update_device_location,
+    update_device_note,
+    update_responsible_fio,
+)
 from ui.verification_dialog import VerificationDialog
 from ui.device_card import DeviceCardDialog
 from ui.add_device_dialog import AddDeviceDialog
@@ -34,13 +49,14 @@ from ui.responsible_dialog import ResponsibleDialog
 from ui.dashboard_dialog import DashboardDialog
 from ui.caldav_settings_dialog import CalDAVSettingsDialog
 from ui.email_settings_dialog import EmailSettingsDialog
+from ui.word_wrap_delegate import LocationComboDelegate
 
 
 # ── Делегат: жирная черта под строкой заголовков ──────────────────────────────
 class HeaderBorderDelegate(QStyledItemDelegate):
     def paint(self, painter: QPainter, option, index):
         super().paint(painter, option, index)
-        if index.row() == 1:
+        if index.row() == 0:
             pen = QPen(QColor("#000000"))
             pen.setWidth(3)
             painter.setPen(pen)
@@ -48,40 +64,62 @@ class HeaderBorderDelegate(QStyledItemDelegate):
             painter.drawLine(rect.bottomLeft(), rect.bottomRight())
 
 
-# ── Константы столбцов ────────────────────────────────────────────────────────
-COL_ID       = 0
-COL_TYPE     = 1
-COL_INV      = 2
-COL_NAME     = 3
-COL_SERIAL   = 4
-COL_LOCATION = 5
-COL_EXPIRY   = 6
-COL_STATUS   = 7
-COL_RESP     = 8
+class _UnconstrainedTable(QTableWidget):
+    """Снимает искусственный минимум по сумме ширин колонок — окно можно сужать до полос прокрутки."""
+
+    def minimumSizeHint(self):
+        return QSize(0, 0)
+
+
+# ── Константы столбцов (как в data/journal.xlsx, строка заголовков) ─────────
+COL_ORD      = 0
+COL_LOCATION = 1
+COL_NAME     = 2
+COL_INV      = 3
+COL_TYPE     = 4
+COL_EXPIRY   = 5
+COL_REM2     = 6
+COL_REM1     = 7
+COL_REM7     = 8
+COL_REM2D    = 9
+COL_STATUS   = 10
+COL_NOTE     = 11
 
 COLUMNS = [
-    "ID",
-    "Тип",
-    "Инв. №",
-    "Наименование",
-    "№ п/п",
-    "Место",
-    "Дата окончания",
+    "№",
+    "Местонахождение (склад/вагон)",
+    "Наименование прибора",
+    "Инв. номер",
+    "Тип прибора",
+    "Дата истечения поверки",
+    "Дата напоминания\n(-2 месяца)",
+    "Дата напоминания\n(-1 месяц)",
+    "Дата напоминания\n(-7 дней)",
+    "Дата напоминания\n(-2 дня)",
     "Статус",
-    "Ответственный",
+    "Примечание",
 ]
 
-# Для поиска по столбцу: у «№ п/п» в ячейке порядковый номер, ищем по serial_number в данных строки
 COL_FIELDS = {
-    COL_ID:       "id",
-    COL_TYPE:     "type",
-    COL_INV:      "inventory_number",
-    COL_NAME:     "name",
-    COL_SERIAL:   "serial_number",
     COL_LOCATION: "location",
+    COL_NAME:     "name",
+    COL_INV:      "inventory_number",
+    COL_TYPE:     "type",
     COL_EXPIRY:   "expiry_date",
+    COL_REM2:     "expiry_date",
+    COL_REM1:     "expiry_date",
+    COL_REM7:     "expiry_date",
+    COL_REM2D:    "expiry_date",
     COL_STATUS:   "status",
-    COL_RESP:     "responsible_fio",
+    COL_NOTE:     "note",
+}
+
+# Отображение статуса в таблице и экспорте — как в journal.xlsx
+JOURNAL_STATUS_LABELS = {
+    "green":   "🟢 В порядке",
+    "yellow":  "🟡 Скоро срок",
+    "red":     "🔴 Просрочено",
+    "no_data": "⚪ Нет данных",
 }
 
 STATUS_ORDER  = {"green": 0, "yellow": 1, "red": 2, "no_data": 3}
@@ -98,7 +136,15 @@ STATUS_LABELS = {
     "no_data": "Нет данных",
 }
 
-HEADER_ROWS = 2
+HEADER_ROWS = 1
+HEADER_TITLE_ROW_HEIGHT = 44
+HEADER_SECTION_DRAG_H = 16  # QHeaderView: индексы столбцов + ручной ресайз
+TABLE_HEADER_HEIGHT = HEADER_SECTION_DRAG_H + HEADER_TITLE_ROW_HEIGHT + 8
+SEARCH_HIGHLIGHT_BG = "#FFF9C4"
+
+# Стартовые ширины колонок (нижняя таблица); ручной ресайз — полоска над table_header
+DEFAULT_COLUMN_WIDTHS = [40, 220, 260, 100, 120, 120, 120, 120, 120, 120, 130, 160]
+DATA_ROW_HEIGHT = 26
 
 
 class MainWindow(QMainWindow):
@@ -106,11 +152,18 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Поверки. Алкометры и Тонометры")
         self.resize(1300, 750)
+        self.setMinimumSize(0, 0)
 
         self._sort_col = None
         self._sort_asc = True
+        self._search_match_ids = []
+        self._search_match_index = -1
+        self._highlight_device_id = None
+        self._column_widths_seeded = False
+        self._column_sync_lock = False
 
         central = QWidget()
+        central.setMinimumSize(0, 0)
         self.setCentralWidget(central)
 
         # ── главный layout: таблица слева, панель справа ──────────────────
@@ -120,12 +173,19 @@ class MainWindow(QMainWindow):
 
         # ── левая часть ───────────────────────────────────────────────────
         left_widget = QWidget()
+        left_widget.setMinimumSize(0, 0)
+        left_widget.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding
+        )
         left_layout = QVBoxLayout(left_widget)
         left_layout.setContentsMargins(6, 6, 6, 6)
         left_layout.setSpacing(6)
 
-        # фильтры
-        filters_layout = QHBoxLayout()
+        # фильтры — в скролле: иначе сумма minWidth комбо задаёт огромный minimumSize окна
+        filters_host = QWidget()
+        filters_host.setMinimumSize(0, 0)
+        filters_layout = QHBoxLayout(filters_host)
+        filters_layout.setContentsMargins(0, 0, 0, 0)
 
         filters_layout.addWidget(QLabel("Тип:"))
         self.type_filter = QComboBox()
@@ -139,7 +199,7 @@ class MainWindow(QMainWindow):
         self.status_filter.currentIndexChanged.connect(self.refresh_table)
         filters_layout.addWidget(self.status_filter)
 
-        filters_layout.addWidget(QLabel("Место:"))
+        filters_layout.addWidget(QLabel("Местонахождение (склад/вагон):"))
         self.location_filter = QComboBox()
         self.location_filter.addItem("Все")
         self.location_filter.currentIndexChanged.connect(self.refresh_table)
@@ -152,23 +212,107 @@ class MainWindow(QMainWindow):
         filters_layout.addWidget(self.responsible_filter)
 
         filters_layout.addStretch()
-        left_layout.addLayout(filters_layout)
+        for cb in (
+            self.type_filter,
+            self.status_filter,
+            self.location_filter,
+            self.responsible_filter,
+        ):
+            cb.setMinimumWidth(0)
+            cb.setSizePolicy(
+                QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Fixed
+            )
 
-        # таблица
-        self.table = QTableWidget()
+        filters_scroll = QScrollArea()
+        filters_scroll.setWidgetResizable(True)
+        filters_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        filters_scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        filters_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        filters_scroll.setMinimumHeight(32)
+        filters_scroll.setMaximumHeight(44)
+        filters_scroll.setWidget(filters_host)
+        filters_scroll.setMinimumSize(0, 0)
+        left_layout.addWidget(filters_scroll)
+
+        # Верхняя таблица — только 2 строки заголовка (не прокручивается по вертикали)
+        self.table_header = _UnconstrainedTable()
         self._header_delegate = HeaderBorderDelegate()
-        self.table.setItemDelegate(self._header_delegate)
+        self.table_header.setItemDelegate(self._header_delegate)
+        self.table_header.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table_header.horizontalHeader().setVisible(False)
+        self.table_header.verticalHeader().setVisible(False)
+        self.table_header.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.table_header.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.table_header.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.table_header.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.table_header.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        hh = self.table_header.horizontalHeader()
+        hh.setVisible(True)
+        hh.setFixedHeight(HEADER_SECTION_DRAG_H)
+        hh.setHighlightSections(False)
+        hh.setStyleSheet(
+            "QHeaderView::section { background: #D9D9D9; color: #555555; "
+            "font: 8pt Calibri; border: 1px solid #b0b0b0; padding: 2px; }"
+        )
+        for c in range(len(COLUMNS)):
+            hh.setSectionResizeMode(c, QHeaderView.ResizeMode.Interactive)
+        self.table_header.cellClicked.connect(self.on_header_cell_clicked)
+        self.table_header.setFrameShape(QFrame.Shape.NoFrame)
+        self.table_header.setFixedHeight(TABLE_HEADER_HEIGHT)
+        self.table_header.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed
+        )
+
+        # Нижняя таблица — только строки данных
+        self.table = _UnconstrainedTable()
+        self.table.setMinimumSize(0, 0)
+        self.table.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding
+        )
         self._date_delegate = DateDelegate()
+        self._location_delegate = LocationComboDelegate(self.table)
         self.table.setItemDelegateForColumn(COL_EXPIRY, self._date_delegate)
-        self.table.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked)
-        self.table.horizontalHeader().setVisible(False)
+        self.table.setItemDelegateForColumn(COL_LOCATION, self._location_delegate)
+        self.table.setEditTriggers(
+            QTableWidget.EditTrigger.DoubleClicked
+            | QTableWidget.EditTrigger.SelectedClicked
+            | QTableWidget.EditTrigger.EditKeyPressed
+        )
+        # Ресайз столбцов — полоска над table_header; здесь заголовок скрыт
+        dh = self.table.horizontalHeader()
+        dh.setVisible(False)
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(DATA_ROW_HEIGHT)
+        self.table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setAlternatingRowColors(False)
-        self.table.cellClicked.connect(self.on_cell_clicked)
         self.table.cellDoubleClicked.connect(self.on_cell_double_clicked)
         self.table.itemChanged.connect(self.on_item_changed)
-        left_layout.addWidget(self.table)
+        dh.setMinimumSectionSize(24)
+        for c in range(len(COLUMNS)):
+            dh.setSectionResizeMode(c, QHeaderView.ResizeMode.Interactive)
+        self.table.horizontalHeader().sectionResized.connect(self._on_data_column_resized)
+        self.table_header.horizontalHeader().sectionResized.connect(
+            self._on_header_column_resized
+        )
+
+        self._sync_h_scroll_lock = False
+        self.table.horizontalScrollBar().valueChanged.connect(self._sync_h_scroll_to_header)
+        self.table_header.horizontalScrollBar().valueChanged.connect(self._sync_h_scroll_to_data)
+        self.table.verticalScrollBar().rangeChanged.connect(
+            lambda *_: self._sync_header_width_to_table_viewport()
+        )
+
+        left_layout.addWidget(
+            self.table_header,
+            0,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+        )
+        left_layout.addWidget(self.table, stretch=1)
 
         main_layout.addWidget(left_widget, stretch=1)
 
@@ -183,13 +327,17 @@ class MainWindow(QMainWindow):
         self.side_panel.sig_caldav_yandex.connect(self.on_caldav_yandex)
         self.side_panel.sig_caldav_mailru.connect(self.on_caldav_mailru)
         self.side_panel.sig_email_settings.connect(self.on_email_settings)
-        # поиск из панели подключаем к refresh_table
-        self.side_panel.search_box.textChanged.connect(self.refresh_table)
+        self.side_panel.search_box.textChanged.connect(self._on_search_text_changed)
+        self.side_panel.search_box.returnPressed.connect(self._search_nav_find_first)
+        self.side_panel.sig_search_find.connect(self._search_nav_find_first)
+        self.side_panel.sig_search_next.connect(self._search_nav_next)
+        self.side_panel.sig_search_prev.connect(self._search_nav_prev)
         main_layout.addWidget(self.side_panel)
 
         init_database()
         self.refresh_table()
         self.fill_filter_values()
+        self._update_search_nav_buttons()
 
     # ── вспомогательные ───────────────────────────────────────────────────
     def _status_from_filter(self):
@@ -201,11 +349,27 @@ class MainWindow(QMainWindow):
         }.get(self.status_filter.currentText(), "")
 
     def _status_key_from_label(self, label: str) -> str:
+        t = (label or "").strip()
+        for key, jl in JOURNAL_STATUS_LABELS.items():
+            if jl == t:
+                return key
         return {
             "В норме":    "green",
             "Скоро срок": "yellow",
             "Просрочено": "red",
-        }.get(label, "no_data")
+        }.get(t, "no_data")
+
+    def _device_id_from_row(self, row: int) -> int | None:
+        it = self.table.item(row, COL_ORD)
+        if not it:
+            return None
+        v = it.data(Qt.ItemDataRole.UserRole)
+        if v is None:
+            return None
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
 
     def _device_full_by_id(self, device_id: int):
         for d in get_all_devices():
@@ -213,14 +377,185 @@ class MainWindow(QMainWindow):
                 return d
         return None
 
-    def _row_matches_inv_serial_search(self, row: dict, search_text: str) -> bool:
-        """Подстрока в инв. №, серийном № или наименовании (без учёта регистра)."""
-        if not search_text:
-            return True
-        inv = (row.get("inventory_number") or "").strip().lower()
-        ser = (row.get("serial_number") or "").strip().lower()
-        nam = (row.get("name") or "").strip().lower()
-        return search_text in inv or search_text in ser or search_text in nam
+    def _row_matches_full_db_search(self, row: dict, q: str) -> bool:
+        """Подстрока в любом из отображаемых полей прибора (без учёта регистра)."""
+        if not q:
+            return False
+        st = row.get("status") or "no_data"
+        parts = [
+            str(row.get("id") or ""),
+            row.get("type") or "",
+            row.get("inventory_number") or "",
+            row.get("serial_number") or "",
+            row.get("name") or "",
+            row.get("location") or "",
+            row.get("note") or "",
+            row.get("responsible_fio") or "",
+            row.get("expiry_date") or "",
+            row.get("verification_date") or "",
+            JOURNAL_STATUS_LABELS.get(st, ""),
+            STATUS_LABELS.get(st, ""),
+        ]
+        for s in parts:
+            if q in (s or "").lower():
+                return True
+        return False
+
+    def _rebuild_search_matches(self):
+        q = self.side_panel.search_box.text().strip().lower()
+        self._search_match_ids = []
+        if not q:
+            return
+        for row in get_all_devices():
+            if self._row_matches_full_db_search(row, q):
+                self._search_match_ids.append(row["id"])
+
+    def _on_search_text_changed(self, _text=None):
+        self._rebuild_search_matches()
+        self._search_match_index = -1
+        self._highlight_device_id = None
+        self._update_search_nav_buttons()
+        self.refresh_table()
+
+    def _update_search_nav_buttons(self):
+        ok = bool(self.side_panel.search_box.text().strip()) and bool(self._search_match_ids)
+        self.side_panel.search_btn_find.setEnabled(ok)
+        self.side_panel.search_btn_next.setEnabled(ok)
+        self.side_panel.search_btn_prev.setEnabled(ok)
+
+    def _reset_filters_to_all(self):
+        self.type_filter.setCurrentIndex(0)
+        self.status_filter.setCurrentIndex(0)
+        self.location_filter.setCurrentIndex(0)
+        self.responsible_filter.setCurrentIndex(0)
+
+    def _collect_filtered_devices(self):
+        """Строки таблицы с учётом комбобоксов (без текста поиска)."""
+        all_devices = get_all_devices()
+        type_filter = self.type_filter.currentText()
+        status_filter = self._status_from_filter()
+        loc_filter = self.location_filter.currentText()
+        resp_filter = self.responsible_filter.currentText()
+        filtered = []
+        for row in all_devices:
+            if type_filter != "Все" and row.get("type") != type_filter:
+                continue
+            if status_filter and row.get("status") != status_filter:
+                continue
+            if loc_filter != "Все" and row.get("location") != loc_filter:
+                continue
+            if resp_filter != "Все" and row.get("responsible_fio") != resp_filter:
+                continue
+            filtered.append(row)
+        return filtered
+
+    def _scroll_to_device_id(self, dev_id: int):
+        for r in range(self.table.rowCount()):
+            rid = self._device_id_from_row(r)
+            if rid is not None and int(rid) == int(dev_id):
+                it = self.table.item(r, COL_ORD)
+                if it:
+                    self.table.selectRow(r)
+                    self.table.scrollToItem(it)
+                return
+
+    def _go_to_current_search_match(self):
+        if not self._search_match_ids or self._search_match_index < 0:
+            return
+        dev_id = self._search_match_ids[self._search_match_index]
+        self._highlight_device_id = dev_id
+        vis = {r["id"] for r in self._collect_filtered_devices()}
+        if dev_id not in vis:
+            self._reset_filters_to_all()
+        self.refresh_table()
+        self.fill_filter_values()
+        self._scroll_to_device_id(dev_id)
+        self._update_search_nav_buttons()
+
+    def _search_nav_find_first(self):
+        self._rebuild_search_matches()
+        if not self._search_match_ids:
+            self._highlight_device_id = None
+            self.refresh_table()
+            self._update_search_nav_buttons()
+            return
+        self._search_match_index = 0
+        self._go_to_current_search_match()
+
+    def _search_nav_next(self):
+        self._rebuild_search_matches()
+        if not self._search_match_ids:
+            return
+        if self._search_match_index < 0:
+            self._search_match_index = 0
+        else:
+            self._search_match_index = (self._search_match_index + 1) % len(
+                self._search_match_ids
+            )
+        self._go_to_current_search_match()
+
+    def _search_nav_prev(self):
+        self._rebuild_search_matches()
+        if not self._search_match_ids:
+            return
+        if self._search_match_index <= 0:
+            self._search_match_index = len(self._search_match_ids) - 1
+        else:
+            self._search_match_index -= 1
+        self._go_to_current_search_match()
+
+    def _table_cell_text(self, row: int, col: int) -> str:
+        it = self.table.item(row, col)
+        return it.text() if it else ""
+
+    def _on_data_column_resized(self, logical_index: int, old_size: int, new_size: int):
+        if self._column_sync_lock:
+            return
+        self._column_sync_lock = True
+        self.table_header.setColumnWidth(logical_index, new_size)
+        self._column_sync_lock = False
+
+    def _on_header_column_resized(self, logical_index: int, old_size: int, new_size: int):
+        if self._column_sync_lock:
+            return
+        self._column_sync_lock = True
+        self.table.setColumnWidth(logical_index, new_size)
+        self._column_sync_lock = False
+
+    def _sync_h_scroll_to_header(self, value: int):
+        if self._sync_h_scroll_lock:
+            return
+        self._sync_h_scroll_lock = True
+        sb = self.table_header.horizontalScrollBar()
+        sb.blockSignals(True)
+        sb.setValue(value)
+        sb.blockSignals(False)
+        self._sync_h_scroll_lock = False
+
+    def _sync_h_scroll_to_data(self, value: int):
+        if self._sync_h_scroll_lock:
+            return
+        self._sync_h_scroll_lock = True
+        sb = self.table.horizontalScrollBar()
+        sb.blockSignals(True)
+        sb.setValue(value)
+        sb.blockSignals(False)
+        self._sync_h_scroll_lock = False
+
+    def _copy_column_widths_to_header(self):
+        for c in range(len(COLUMNS)):
+            self.table_header.setColumnWidth(c, self.table.columnWidth(c))
+
+    def _sync_header_width_to_table_viewport(self):
+        """Ширина области заголовка = viewport данных (минус вертикальный скролл), иначе расходится горизонтальный скролл."""
+        w = self.table.viewport().width()
+        if w > 0:
+            self.table_header.setFixedWidth(w)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # После завершения кадра ресайза: синхрон в resizeEvent давал гонку с layout и блокировал окно
+        QTimer.singleShot(0, self._sync_header_width_to_table_viewport)
 
     # ── заполнение фильтров ───────────────────────────────────────────────
     def fill_filter_values(self):
@@ -256,72 +591,31 @@ class MainWindow(QMainWindow):
     # ── основная отрисовка таблицы ────────────────────────────────────────
     def refresh_table(self):
         self.table.blockSignals(True)
+        self.table_header.blockSignals(True)
 
-        all_devices = get_all_devices()
+        filtered = self._collect_filtered_devices()
+        base_locs = get_location_choices()
 
-        type_filter   = self.type_filter.currentText()
-        status_filter = self._status_from_filter()
-        loc_filter    = self.location_filter.currentText()
-        resp_filter   = self.responsible_filter.currentText()
-        search_text = self.side_panel.search_box.text().strip().lower()
-
-        filtered = []
-        for row in all_devices:
-            if type_filter != "Все" and row.get("type") != type_filter:
-                continue
-            if status_filter and row.get("status") != status_filter:
-                continue
-            if loc_filter != "Все" and row.get("location") != loc_filter:
-                continue
-            if resp_filter != "Все" and row.get("responsible_fio") != resp_filter:
-                continue
-            if search_text and not self._row_matches_inv_serial_search(row, search_text):
-                continue
-            filtered.append(row)
-
-        # сортировка (№ п/п — по типу/месту/инв., как порядок в журнале)
         if self._sort_col is not None:
-            if self._sort_col == COL_SERIAL:
-                filtered.sort(
-                    key=lambda r: (
-                        r.get("type") or "",
-                        r.get("location") or "",
-                        str(r.get("inventory_number") or ""),
-                    ),
-                    reverse=not self._sort_asc,
-                )
-            else:
-                field = COL_FIELDS.get(self._sort_col)
-                if field:
-                    if field == "status":
-                        filtered.sort(
-                            key=lambda r: STATUS_ORDER.get(r.get("status") or "no_data", 9),
-                            reverse=not self._sort_asc,
-                        )
-                    else:
-                        filtered.sort(
-                            key=lambda r: (r.get(field) or ""),
-                            reverse=not self._sort_asc,
-                        )
+            field = COL_FIELDS.get(self._sort_col)
+            if field:
+                if field == "status":
+                    filtered.sort(
+                        key=lambda r: STATUS_ORDER.get(r.get("status") or "no_data", 9),
+                        reverse=not self._sort_asc,
+                    )
+                else:
+                    filtered.sort(
+                        key=lambda r: (r.get(field) or ""),
+                        reverse=not self._sort_asc,
+                    )
 
-        total_rows = len(filtered) + HEADER_ROWS
-        self.table.clearContents()
-        self.table.setRowCount(total_rows)
-        self.table.setColumnCount(len(COLUMNS))
+        # ── верхняя таблица: индексы 0…n в QHeaderView (одна строка), ниже — названия столбцов
+        self.table_header.clearContents()
+        self.table_header.setRowCount(HEADER_ROWS)
+        self.table_header.setColumnCount(len(COLUMNS))
+        self.table_header.setHorizontalHeaderLabels([str(c) for c in range(len(COLUMNS))])
 
-        # строка 0 — номера столбцов
-        num_font = QFont("Calibri", 8)
-        for c in range(len(COLUMNS)):
-            cell = QTableWidgetItem(str(c))
-            cell.setFont(num_font)
-            cell.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            cell.setFlags(Qt.ItemFlag.ItemIsEnabled)
-            cell.setBackground(QColor("#D9D9D9"))
-            cell.setForeground(QColor("#555555"))
-            self.table.setItem(0, c, cell)
-        self.table.setRowHeight(0, 16)
-
-        # строка 1 — заголовки
         hdr_font = QFont("Calibri", 10)
         hdr_font.setBold(True)
         for c, col_name in enumerate(COLUMNS):
@@ -334,32 +628,87 @@ class MainWindow(QMainWindow):
             cell.setFlags(Qt.ItemFlag.ItemIsEnabled)
             cell.setBackground(QColor("#1F3864"))
             cell.setForeground(QColor("#FFFFFF"))
-            self.table.setItem(1, c, cell)
-        self.table.setRowHeight(1, 28)
+            self.table_header.setItem(0, c, cell)
+        self.table_header.setRowHeight(0, HEADER_TITLE_ROW_HEIGHT)
 
-        # строки данных
+        # ── нижняя таблица: только данные ──
+        self.table.clearContents()
+        self.table.setRowCount(len(filtered))
+        self.table.setColumnCount(len(COLUMNS))
+        self.table.setHorizontalHeaderLabels([""] * len(COLUMNS))
+
+        if not self._column_widths_seeded:
+            for c, w in enumerate(DEFAULT_COLUMN_WIDTHS):
+                self.table.setColumnWidth(c, w)
+            self._column_widths_seeded = True
+
         for r, row in enumerate(filtered):
-            actual_row = r + HEADER_ROWS
             status = row.get("status") or "no_data"
             expiry = row.get("expiry_date") or ""
+            dev_id = row.get("id")
+            is_hl = (
+                self._highlight_device_id is not None
+                and dev_id is not None
+                and int(dev_id) == int(self._highlight_device_id)
+            )
 
+            rem = journal_reminder_dates(expiry)
             values = [
-                str(row.get("id") or ""),
-                row.get("type") or "",
-                row.get("inventory_number") or "",
-                row.get("name") or "",
                 str(r + 1),
                 row.get("location") or "",
+                row.get("name") or "",
+                row.get("inventory_number") or "",
+                row.get("type") or "",
                 expiry,
-                STATUS_LABELS.get(status, "Нет данных"),
-                row.get("responsible_fio") or "",
+                rem[0],
+                rem[1],
+                rem[2],
+                rem[3],
+                JOURNAL_STATUS_LABELS.get(status, "⚪ Нет данных"),
+                row.get("note") or "",
             ]
 
             bg_status, fg_status = STATUS_COLORS.get(status, STATUS_COLORS["no_data"])
 
+            cur_loc = (row.get("location") or "").strip()
+            loc_items = list(base_locs)
+            if cur_loc and cur_loc not in loc_items:
+                loc_items.append(cur_loc)
+                loc_items.sort()
+
             for c, val in enumerate(values):
-                cell = QTableWidgetItem(val)
-                if c in (COL_NAME, COL_LOCATION):
+                if c == COL_ORD:
+                    ord_cell = QTableWidgetItem(val)
+                    ord_cell.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    ord_cell.setData(Qt.ItemDataRole.UserRole, dev_id)
+                    ord_cell.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                    if is_hl:
+                        ord_cell.setBackground(QColor(SEARCH_HIGHLIGHT_BG))
+                    else:
+                        ord_cell.setBackground(QColor("#FFFFFF"))
+                    ord_cell.setForeground(QColor("#000000"))
+                    self.table.setItem(r, COL_ORD, ord_cell)
+                    continue
+                if c == COL_LOCATION:
+                    loc_cell = QTableWidgetItem(cur_loc)
+                    loc_cell.setTextAlignment(
+                        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+                    )
+                    loc_cell.setData(Qt.ItemDataRole.UserRole, loc_items)
+                    loc_cell.setFlags(
+                        Qt.ItemFlag.ItemIsEnabled
+                        | Qt.ItemFlag.ItemIsSelectable
+                        | Qt.ItemFlag.ItemIsEditable
+                    )
+                    if is_hl:
+                        loc_cell.setBackground(QColor(SEARCH_HIGHLIGHT_BG))
+                    else:
+                        loc_cell.setBackground(QColor("#FFFFFF"))
+                    loc_cell.setForeground(QColor("#000000"))
+                    self.table.setItem(r, COL_LOCATION, loc_cell)
+                    continue
+                cell = QTableWidgetItem("" if val is None else str(val))
+                if c in (COL_NAME, COL_NOTE):
                     cell.setTextAlignment(
                         Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
                     )
@@ -370,8 +719,13 @@ class MainWindow(QMainWindow):
                     cell.setBackground(QColor(bg_status))
                     cell.setForeground(QColor(fg_status))
                     cell.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-                elif c == COL_SERIAL:
+                elif c in (COL_REM2, COL_REM1, COL_REM7, COL_REM2D, COL_NAME, COL_INV, COL_TYPE):
                     cell.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                    if is_hl:
+                        cell.setBackground(QColor(SEARCH_HIGHLIGHT_BG))
+                    else:
+                        cell.setBackground(QColor("#FFFFFF"))
+                    cell.setForeground(QColor("#000000"))
                 elif c == COL_EXPIRY:
                     cell.setBackground(QColor("#FFFFFF"))
                     cell.setForeground(QColor("#000000"))
@@ -380,7 +734,7 @@ class MainWindow(QMainWindow):
                         | Qt.ItemFlag.ItemIsSelectable
                         | Qt.ItemFlag.ItemIsEditable
                     )
-                elif c == COL_RESP:
+                elif c == COL_NOTE:
                     cell.setBackground(QColor("#FFFFFF"))
                     cell.setForeground(QColor("#000000"))
                     cell.setFlags(
@@ -389,28 +743,35 @@ class MainWindow(QMainWindow):
                         | Qt.ItemFlag.ItemIsEditable
                     )
                 else:
-                    cell.setBackground(QColor("#FFFFFF"))
+                    if is_hl:
+                        cell.setBackground(QColor(SEARCH_HIGHLIGHT_BG))
+                    else:
+                        cell.setBackground(QColor("#FFFFFF"))
                     cell.setForeground(QColor("#000000"))
                     cell.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
 
-                self.table.setItem(actual_row, c, cell)
+                self.table.setItem(r, c, cell)
 
-            self.table.setRowHeight(actual_row, 22)
+        self._copy_column_widths_to_header()
+        for rr in range(self.table.rowCount()):
+            self.table.setRowHeight(rr, DATA_ROW_HEIGHT)
 
-        self.table.resizeColumnsToContents()
-
-        # обновляем счётчик в правой панели
-        total  = len(filtered)
-        green  = sum(1 for r in filtered if r.get("status") == "green")
+        total = len(filtered)
+        green = sum(1 for r in filtered if r.get("status") == "green")
         yellow = sum(1 for r in filtered if r.get("status") == "yellow")
-        red    = sum(1 for r in filtered if r.get("status") == "red")
+        red = sum(1 for r in filtered if r.get("status") == "red")
         self.side_panel.update_counter(total, green, yellow, red)
 
+        self.table_header.blockSignals(False)
         self.table.blockSignals(False)
 
-    # ── клик по ячейке ────────────────────────────────────────────────────
-    def on_cell_clicked(self, row, col):
-        if row == 1:
+        QTimer.singleShot(0, self._sync_header_width_to_table_viewport)
+
+    # ── клик по строке заголовков (верхняя таблица) ─────────────────────────
+    def on_header_cell_clicked(self, row, col):
+        if row == 0:
+            if col == COL_ORD:
+                return
             if self._sort_col == col:
                 self._sort_asc = not self._sort_asc
             else:
@@ -419,22 +780,23 @@ class MainWindow(QMainWindow):
             self.refresh_table()
 
     def on_cell_double_clicked(self, row, col):
-        if row < HEADER_ROWS:
-            return
-        if col == COL_EXPIRY:
+        if col in (
+            COL_ORD,
+            COL_LOCATION,
+            COL_EXPIRY,
+            COL_REM2,
+            COL_REM1,
+            COL_REM7,
+            COL_REM2D,
+        ):
             return
 
-        id_item = self.table.item(row, COL_ID)
-        if not id_item:
-            return
-        try:
-            device_id = int(id_item.text())
-        except ValueError:
+        device_id = self._device_id_from_row(row)
+        if device_id is None:
             return
 
         def cell_text(c):
-            it = self.table.item(row, c)
-            return it.text() if it else ""
+            return self._table_cell_text(row, c)
 
         device_data = {
             "id":               device_id,
@@ -442,18 +804,19 @@ class MainWindow(QMainWindow):
             "inventory_number": cell_text(COL_INV),
             "location":         cell_text(COL_LOCATION),
             "expiry_date":      cell_text(COL_EXPIRY),
-            "responsible_fio":  cell_text(COL_RESP),
+            "responsible_fio":  "",
             "status":           self._status_key_from_label(cell_text(COL_STATUS)),
             "verification_date": "",
+            "name":             cell_text(COL_NAME),
         }
         full = self._device_full_by_id(device_id)
         if full:
             device_data["verification_date"] = full.get("verification_date") or ""
             device_data["serial_number"] = full.get("serial_number") or ""
-            device_data["name"] = full.get("name") or ""
+            device_data["name"] = full.get("name") or device_data["name"]
+            device_data["responsible_fio"] = full.get("responsible_fio") or ""
         else:
             device_data["serial_number"] = ""
-            device_data["name"] = cell_text(COL_NAME)
 
         dlg = DeviceCardDialog(device_data, self)
         if dlg.exec():
@@ -465,15 +828,8 @@ class MainWindow(QMainWindow):
         row = item.row()
         col = item.column()
 
-        if row < HEADER_ROWS:
-            return
-
-        id_item = self.table.item(row, COL_ID)
-        if not id_item:
-            return
-        try:
-            device_id = int(id_item.text())
-        except ValueError:
+        device_id = self._device_id_from_row(row)
+        if device_id is None:
             return
 
         if col == COL_EXPIRY:
@@ -496,9 +852,16 @@ class MainWindow(QMainWindow):
             self.refresh_table()
             self.fill_filter_values()
 
-        elif col == COL_RESP:
-            fio = item.text().strip()
-            update_responsible_fio(device_id, fio)
+        elif col == COL_NOTE:
+            update_device_note(device_id, item.text())
+
+        elif col == COL_LOCATION:
+            new_loc = item.text().strip()
+            full = self._device_full_by_id(device_id)
+            old_loc = (full or {}).get("location") or ""
+            if new_loc != old_loc:
+                update_device_location(device_id, new_loc)
+                self.fill_filter_values()
 
     # ── обработчики кнопок из правой панели ───────────────────────────────
     def on_add_device(self):
@@ -508,7 +871,7 @@ class MainWindow(QMainWindow):
             self.refresh_table()
             self.fill_filter_values()
             last_row = self.table.rowCount() - 1
-            if last_row >= HEADER_ROWS:
+            if last_row >= 0:
                 self.table.scrollToItem(self.table.item(last_row, 0))
                 self.table.selectRow(last_row)
 
@@ -583,20 +946,9 @@ class MainWindow(QMainWindow):
         ws = wb.active
         ws.title = "Журнал поверок"
 
-        headers = [
-            "ID",
-            "Тип",
-            "Инв. №",
-            "Наименование",
-            "№ п/п",
-            "Место",
-            "Дата окончания",
-            "Статус",
-            "Ответственный",
-        ]
+        headers = list(COLUMNS)
         header_font = Font(name="Calibri", bold=True, color="FFFFFF", size=11)
         header_fill = PatternFill("solid", fgColor="1F3864")
-        header_align = Alignment(horizontal="center", vertical="center")
 
         STATUS_COLORS_XL = {
             "green":   "C6EFCE",
@@ -612,17 +964,18 @@ class MainWindow(QMainWindow):
             cell = ws.cell(row=1, column=c, value=h)
             cell.font = header_font
             cell.fill = header_fill
-            cell.alignment = header_align
+            cell.alignment = Alignment(
+                horizontal="center", vertical="center", wrap_text=True
+            )
             cell.border = border
 
-        ws.row_dimensions[1].height = 22
+        ws.row_dimensions[1].height = 44
 
         devices = get_all_devices()
         type_f   = self.type_filter.currentText()
         status_f = self._status_from_filter()
         loc_f    = self.location_filter.currentText()
         resp_f   = self.responsible_filter.currentText()
-        search_f = self.side_panel.search_box.text().strip().lower()
 
         filtered = []
         for row in devices:
@@ -634,23 +987,27 @@ class MainWindow(QMainWindow):
                 continue
             if resp_f != "Все" and row.get("responsible_fio") != resp_f:
                 continue
-            if search_f and not self._row_matches_inv_serial_search(row, search_f):
-                continue
             filtered.append(row)
 
-        for excel_row, row in enumerate(filtered, 2):
+        for excel_row, (ord_i, row) in enumerate(
+            ((i + 1, r) for i, r in enumerate(filtered)), start=2
+        ):
             status = row.get("status") or "no_data"
-            seq = excel_row - 1
+            exp = row.get("expiry_date") or ""
+            rem = journal_reminder_dates(exp)
             values = [
-                row.get("id"),
-                row.get("type") or "",
-                row.get("inventory_number") or "",
-                row.get("name") or "",
-                seq,
+                ord_i,
                 row.get("location") or "",
-                row.get("expiry_date") or "",
-                STATUS_LABELS.get(status, "Нет данных"),
-                row.get("responsible_fio") or "",
+                row.get("name") or "",
+                row.get("inventory_number") or "",
+                row.get("type") or "",
+                exp,
+                rem[0],
+                rem[1],
+                rem[2],
+                rem[3],
+                JOURNAL_STATUS_LABELS.get(status, "⚪ Нет данных"),
+                row.get("note") or "",
             ]
             bg = STATUS_COLORS_XL.get(status, "FFFFFF")
             fill = PatternFill("solid", fgColor=bg)
@@ -660,12 +1017,12 @@ class MainWindow(QMainWindow):
                 cell.fill = fill
                 cell.border = border
                 h = "center"
-                if c in (4, 6):
+                if c in (2, 3, 12):
                     h = "left"
-                cell.alignment = Alignment(horizontal=h, vertical="center", wrap_text=c == 6)
+                cell.alignment = Alignment(horizontal=h, vertical="center", wrap_text=False)
             ws.row_dimensions[excel_row].height = 18
 
-        col_widths = [6, 12, 16, 28, 8, 36, 16, 14, 25]
+        col_widths = [6, 36, 40, 14, 16, 16, 16, 16, 16, 16, 18, 28]
         for i, w in enumerate(col_widths, 1):
             ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
 
