@@ -96,7 +96,8 @@ class EmailSettingsDialog(QDialog):
 
         note = QLabel(
             "⚠️  Для Mail.ru и Яндекс используйте отдельный «пароль приложения», "
-            "не основной пароль аккаунта."
+            "не основной пароль аккаунта.\n"
+            "Сводка на почту уходит с вложением Excel (.xlsx)."
         )
         note.setWordWrap(True)
         note.setStyleSheet(

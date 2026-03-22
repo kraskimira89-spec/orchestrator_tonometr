@@ -8,10 +8,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import smtplib
 import ssl
+from email import encoders
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import date
 
+from core.digest_workbook import build_digest_xlsx
 from core.daily_digest import (
     compute_digest,
     digest_subject,
@@ -63,7 +66,13 @@ def get_smtp_settings() -> dict:
     }
 
 
-def send_email(to_addr: str, subject: str, html: str, plain: str) -> bool:
+def send_email(
+    to_addr: str,
+    subject: str,
+    html: str,
+    plain: str,
+    attachment: tuple[bytes, str] | None = None,
+) -> bool:
     s = get_smtp_settings()
     if not s["host"] or not s["login"] or not s["password"]:
         print("SMTP не настроен — письмо не отправлено.")
@@ -71,25 +80,43 @@ def send_email(to_addr: str, subject: str, html: str, plain: str) -> bool:
 
     from_addr = s["from"] or s["login"]
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = from_addr
-    msg["To"] = to_addr
-    msg.attach(MIMEText(plain, "plain", "utf-8"))
-    msg.attach(MIMEText(html, "html", "utf-8"))
+    msg_root = MIMEMultipart("mixed")
+    msg_root["Subject"] = subject
+    msg_root["From"] = from_addr
+    msg_root["To"] = to_addr
+
+    alt = MIMEMultipart("alternative")
+    alt.attach(MIMEText(plain, "plain", "utf-8"))
+    alt.attach(MIMEText(html, "html", "utf-8"))
+    msg_root.attach(alt)
+
+    if attachment:
+        data, filename = attachment
+        part = MIMEBase(
+            "application",
+            "vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        part.set_payload(data)
+        encoders.encode_base64(part)
+        part.add_header(
+            "Content-Disposition",
+            "attachment",
+            filename=filename,
+        )
+        msg_root.attach(part)
 
     try:
         if s["ssl"]:
             context = ssl.create_default_context()
             with smtplib.SMTP_SSL(s["host"], s["port"], context=context) as server:
                 server.login(s["login"], s["password"])
-                server.sendmail(from_addr, to_addr, msg.as_string())
+                server.sendmail(from_addr, to_addr, msg_root.as_string())
         else:
             with smtplib.SMTP(s["host"], s["port"]) as server:
                 server.ehlo()
                 server.starttls(context=ssl.create_default_context())
                 server.login(s["login"], s["password"])
-                server.sendmail(from_addr, to_addr, msg.as_string())
+                server.sendmail(from_addr, to_addr, msg_root.as_string())
         print(f"  Email → {to_addr}: OK")
         return True
     except Exception as e:
@@ -111,7 +138,15 @@ def test_smtp(to_addr: str) -> str:
         "<b>Тест SMTP.</b> Если письмо получено — настройки верны.<br>"
         "Детали — в приложении.",
     )
-    ok = send_email(to_addr, "✅ Тест SMTP — Оркестратор Поверки", html, plain)
+    xlsx = build_digest_xlsx(digest, [])
+    fn = f"test_poverki_svodka_{date.today().isoformat()}.xlsx"
+    ok = send_email(
+        to_addr,
+        "✅ Тест SMTP — Оркестратор Поверки",
+        html,
+        plain,
+        attachment=(xlsx, fn),
+    )
     return "✅ Письмо отправлено успешно." if ok else "❌ Ошибка отправки. Проверьте настройки SMTP."
 
 
@@ -140,13 +175,22 @@ def send_email_notifications(dry_run: bool = False) -> dict:
             "skipped_already_today": 1,
         }
 
-    digest = compute_digest(get_all_devices())
+    devices = get_all_devices()
+    digest = compute_digest(devices)
     subject = digest_subject(digest)
     html = format_digest_html(digest)
     plain = format_digest_plain(digest)
+    plain += (
+        "\n\nВо вложении файл Excel (.xlsx): сводка, по ответственным, полный список приборов."
+    )
+    html += (
+        "<p style='font-size:12px;color:#666;'>"
+        "<b>Вложение:</b> Excel (.xlsx) — листы «Сводка», «По ответственным», «Приборы»."
+        "</p>"
+    )
 
     if dry_run:
-        print(f"  [dry-run] сводка → {admin} ({digest['total']} приборов в журнале)")
+        print(f"  [dry-run] сводка + xlsx → {admin} ({digest['total']} приборов в журнале)")
         return {
             "sent": 1,
             "skipped": 0,
@@ -154,7 +198,10 @@ def send_email_notifications(dry_run: bool = False) -> dict:
             "skipped_already_today": 0,
         }
 
-    if send_email(admin, subject, html, plain):
+    xlsx = build_digest_xlsx(digest, devices)
+    fn = f"Poverki_svodka_{date.today().isoformat()}.xlsx"
+
+    if send_email(admin, subject, html, plain, attachment=(xlsx, fn)):
         log_digest_notification("email_digest", marker)
         return {
             "sent": 1,
