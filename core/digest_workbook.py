@@ -93,40 +93,46 @@ def build_digest_xlsx(digest: dict[str, Any], devices: list[dict]) -> bytes:
     w3 = wb.create_sheet("Приборы")
     w3.append(
         [
-            "ID",
+            "№ п/п",
+            "Наименование",
             "Тип",
             "Инв. №",
             "Место",
             "Дата окончания",
             "Статус",
             "Ответственный",
+            "ID",
         ]
     )
-    for c in range(1, 8):
+    for c in range(1, 10):
         cell = w3.cell(row=1, column=c)
         cell.font = hdr_font
         cell.fill = hdr_fill
-    for d in devices:
+    for i, d in enumerate(devices, start=1):
         st = d.get("status") or "no_data"
         w3.append(
             [
-                d.get("id"),
+                i,
+                d.get("name") or "",
                 d.get("type") or "",
                 d.get("inventory_number") or "",
                 d.get("location") or "",
                 d.get("expiry_date") or "",
                 STATUS_RU_ROW.get(st, st),
                 d.get("responsible_fio") or "",
+                d.get("id"),
             ]
         )
-    w3.column_dimensions["A"].width = 6
-    w3.column_dimensions["B"].width = 12
-    w3.column_dimensions["C"].width = 14
-    w3.column_dimensions["D"].width = 48
-    w3.column_dimensions["E"].width = 14
+    w3.column_dimensions["A"].width = 8
+    w3.column_dimensions["B"].width = 28
+    w3.column_dimensions["C"].width = 12
+    w3.column_dimensions["D"].width = 14
+    w3.column_dimensions["E"].width = 48
     w3.column_dimensions["F"].width = 14
-    w3.column_dimensions["G"].width = 28
-    for row in w3.iter_rows(min_row=2, max_row=w3.max_row, min_col=4, max_col=4):
+    w3.column_dimensions["G"].width = 14
+    w3.column_dimensions["H"].width = 28
+    w3.column_dimensions["I"].width = 8
+    for row in w3.iter_rows(min_row=2, max_row=w3.max_row, min_col=5, max_col=5):
         for cell in row:
             cell.alignment = wrap
 

@@ -128,6 +128,16 @@ class DeviceCardDialog(QDialog):
         self.f_inv = QLineEdit(device.get("inventory_number") or "")
         form.addRow(make_label("Инв. №:"), self.f_inv)
 
+        # Наименование (модель / название прибора)
+        self.f_name = QLineEdit(device.get("name") or "")
+        self.f_name.setPlaceholderText("Например: Анализатор Динго")
+        form.addRow(make_label("Наименование:"), self.f_name)
+
+        # Серийный номер (заводской)
+        self.f_serial = QLineEdit(device.get("serial_number") or "")
+        self.f_serial.setPlaceholderText("Заводской серийный номер")
+        form.addRow(make_label("Серийный номер:"), self.f_serial)
+
         # Место
         self.f_location = QLineEdit(device.get("location") or "")
         self.f_location.setMinimumWidth(300)
@@ -225,6 +235,8 @@ class DeviceCardDialog(QDialog):
         device_id   = self.device.get("id")
         new_type    = self.f_type.get_value() if hasattr(self.f_type, "get_value") else self.f_type.text().strip()
         new_inv     = self.f_inv.text().strip()
+        new_name    = self.f_name.text().strip()
+        new_serial  = self.f_serial.text().strip()
         new_loc     = self.f_location.text().strip()
         new_resp    = self.f_resp.text().strip()
         new_expiry  = self.f_expiry.get_value()
@@ -233,14 +245,18 @@ class DeviceCardDialog(QDialog):
         conn = get_connection()
         cur  = conn.cursor()
 
+        if not new_name:
+            new_name = new_type or "Прибор"
+
         # обновляем основные поля прибора
         cur.execute(
             """
             UPDATE devices
-            SET type = ?, inventory_number = ?, location = ?, responsible_fio = ?
+            SET type = ?, name = ?, inventory_number = ?, serial_number = ?,
+                location = ?, responsible_fio = ?
             WHERE id = ?
             """,
-            (new_type, new_inv, new_loc, new_resp, device_id),
+            (new_type, new_name, new_inv, new_serial, new_loc, new_resp, device_id),
         )
 
         # если изменилась дата окончания — добавляем новую запись поверки

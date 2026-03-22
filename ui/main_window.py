@@ -64,13 +64,14 @@ COLUMNS = [
     "Тип",
     "Инв. №",
     "Наименование",
-    "Серийный №",
+    "№ п/п",
     "Место",
     "Дата окончания",
     "Статус",
     "Ответственный",
 ]
 
+# Для поиска по столбцу: у «№ п/п» в ячейке порядковый номер, ищем по serial_number в данных строки
 COL_FIELDS = {
     COL_ID:       "id",
     COL_TYPE:     "type",
@@ -278,20 +279,30 @@ class MainWindow(QMainWindow):
                 continue
             filtered.append(row)
 
-        # сортировка
+        # сортировка (№ п/п — по типу/месту/инв., как порядок в журнале)
         if self._sort_col is not None:
-            field = COL_FIELDS.get(self._sort_col)
-            if field:
-                if field == "status":
-                    filtered.sort(
-                        key=lambda r: STATUS_ORDER.get(r.get("status") or "no_data", 9),
-                        reverse=not self._sort_asc,
-                    )
-                else:
-                    filtered.sort(
-                        key=lambda r: (r.get(field) or ""),
-                        reverse=not self._sort_asc,
-                    )
+            if self._sort_col == COL_SERIAL:
+                filtered.sort(
+                    key=lambda r: (
+                        r.get("type") or "",
+                        r.get("location") or "",
+                        str(r.get("inventory_number") or ""),
+                    ),
+                    reverse=not self._sort_asc,
+                )
+            else:
+                field = COL_FIELDS.get(self._sort_col)
+                if field:
+                    if field == "status":
+                        filtered.sort(
+                            key=lambda r: STATUS_ORDER.get(r.get("status") or "no_data", 9),
+                            reverse=not self._sort_asc,
+                        )
+                    else:
+                        filtered.sort(
+                            key=lambda r: (r.get(field) or ""),
+                            reverse=not self._sort_asc,
+                        )
 
         total_rows = len(filtered) + HEADER_ROWS
         self.table.clearContents()
@@ -337,7 +348,7 @@ class MainWindow(QMainWindow):
                 row.get("type") or "",
                 row.get("inventory_number") or "",
                 row.get("name") or "",
-                row.get("serial_number") or "",
+                str(r + 1),
                 row.get("location") or "",
                 expiry,
                 STATUS_LABELS.get(status, "Нет данных"),
@@ -358,6 +369,8 @@ class MainWindow(QMainWindow):
                 if c == COL_STATUS:
                     cell.setBackground(QColor(bg_status))
                     cell.setForeground(QColor(fg_status))
+                    cell.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                elif c == COL_SERIAL:
                     cell.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
                 elif c == COL_EXPIRY:
                     cell.setBackground(QColor("#FFFFFF"))
@@ -439,7 +452,7 @@ class MainWindow(QMainWindow):
             device_data["serial_number"] = full.get("serial_number") or ""
             device_data["name"] = full.get("name") or ""
         else:
-            device_data["serial_number"] = cell_text(COL_SERIAL)
+            device_data["serial_number"] = ""
             device_data["name"] = cell_text(COL_NAME)
 
         dlg = DeviceCardDialog(device_data, self)
@@ -575,7 +588,7 @@ class MainWindow(QMainWindow):
             "Тип",
             "Инв. №",
             "Наименование",
-            "Серийный №",
+            "№ п/п",
             "Место",
             "Дата окончания",
             "Статус",
@@ -625,14 +638,15 @@ class MainWindow(QMainWindow):
                 continue
             filtered.append(row)
 
-        for r, row in enumerate(filtered, 2):
+        for excel_row, row in enumerate(filtered, 2):
             status = row.get("status") or "no_data"
+            seq = excel_row - 1
             values = [
                 row.get("id"),
                 row.get("type") or "",
                 row.get("inventory_number") or "",
                 row.get("name") or "",
-                row.get("serial_number") or "",
+                seq,
                 row.get("location") or "",
                 row.get("expiry_date") or "",
                 STATUS_LABELS.get(status, "Нет данных"),
@@ -642,13 +656,16 @@ class MainWindow(QMainWindow):
             fill = PatternFill("solid", fgColor=bg)
 
             for c, val in enumerate(values, 1):
-                cell = ws.cell(row=r, column=c, value=val)
+                cell = ws.cell(row=excel_row, column=c, value=val)
                 cell.fill = fill
                 cell.border = border
-                cell.alignment = Alignment(horizontal="center", vertical="center")
-            ws.row_dimensions[r].height = 18
+                h = "center"
+                if c in (4, 6):
+                    h = "left"
+                cell.alignment = Alignment(horizontal=h, vertical="center", wrap_text=c == 6)
+            ws.row_dimensions[excel_row].height = 18
 
-        col_widths = [6, 12, 16, 28, 16, 36, 16, 14, 25]
+        col_widths = [6, 12, 16, 28, 8, 36, 16, 14, 25]
         for i, w in enumerate(col_widths, 1):
             ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
 
